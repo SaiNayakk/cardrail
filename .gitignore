@@ -1,0 +1,16 @@
+target/
+*.class
+*.log
+.idea/
+*.iml
+.vscode/
+.DS_Store
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+site/
+node_modules/
+dist/
+.angular/
