@@ -19,6 +19,14 @@ import { PartyDiagram } from '../ui/party-diagram';
 
       <section class="actions-grid">
         <div class="card action-card">
+          <h2>How it works</h2>
+          <p class="muted small">
+            Plain-words explanation of authorisation, capture, voids, refunds, network stand-in, and reversals.
+          </p>
+          <a routerLink="/how-it-works" class="btn btn-secondary">How it works</a>
+        </div>
+
+        <div class="card action-card">
           <h2>Demo shop</h2>
           <p class="muted small">
             Purchase demo goods with test cards. Card data is tokenised securely by the hosted gateway before checkout.

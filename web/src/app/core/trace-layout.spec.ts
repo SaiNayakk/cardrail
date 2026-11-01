@@ -77,6 +77,29 @@ describe('trace layout', () => {
     expect(layout.widthPercent).toBe(20);
   });
 
+  it('detects stand-in events when summary contains stands in', () => {
+    const standInEvent: TraceEvent = {
+      id: 4,
+      traceKey: 'trace_123',
+      reporter: 'railnet',
+      from: 'railnet',
+      to: 'railpay-acquiring',
+      kind: 'note',
+      summary: 'No answer within 3000 ms: Railnet stands in and approves, telling the issuer later (0120)',
+      at: '2026-11-02T10:00:03.000Z',
+    };
+    const layout = layoutEventArrow(standInEvent, DEFAULT_LANES);
+    expect(layout.isStandIn).toBe(true);
+
+    const normalLayout = layoutEventArrow(sampleEvent1, DEFAULT_LANES);
+    expect(normalLayout.isStandIn).toBe(false);
+  });
+
+  it('populates mtiName for ISO 8583 events', () => {
+    const layout = layoutEventArrow(sampleEvent2, DEFAULT_LANES);
+    expect(layout.mtiName).toBe('Authorisation request');
+  });
+
   it('maps an entire list of events in chronological order', () => {
     const arrows = layoutTraceArrows([sampleEvent1, sampleEvent2, sampleEvent3]);
     expect(arrows).toHaveLength(3);

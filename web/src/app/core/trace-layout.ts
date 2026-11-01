@@ -1,3 +1,4 @@
+import { getMtiName } from './iso8583';
 import { PARTY_NAMES, TraceEvent } from './types';
 
 export interface TraceLane {
@@ -26,6 +27,8 @@ export interface ArrowLayout {
   leftPercent: number;
   widthPercent: number;
   timeFormatted: string;
+  isStandIn: boolean;
+  mtiName?: string;
 }
 
 /** Formats an ISO date string to HH:mm:ss.SSS for event sequences. */
@@ -83,6 +86,8 @@ export function layoutEventArrow(
   const fromName = PARTY_NAMES[event.from] ?? event.from;
   const toName = PARTY_NAMES[event.to] ?? event.to;
   const timeFormatted = formatEventTime(event.at);
+  const isStandIn = (event.summary ?? '').toLowerCase().includes('stands in');
+  const mtiName = event.mti ? getMtiName(event.mti) : undefined;
 
   return {
     event,
@@ -97,6 +102,8 @@ export function layoutEventArrow(
     leftPercent,
     widthPercent,
     timeFormatted,
+    isStandIn,
+    mtiName,
   };
 }
 

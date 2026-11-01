@@ -4,11 +4,16 @@ import { firstValueFrom } from 'rxjs';
 import {
   CheckoutRequest,
   Payment,
+  PaymentListResponse,
+  Refund,
+  RefundRequest,
   ShopConfig,
   TestCard,
   TraceDetail,
   TraceSummary,
+  WebhookEvent,
 } from './types';
+export { createRefundRequestId } from './refund';
 
 /** Generates a new random order id between 8 and 64 alphanumeric characters. */
 export function createOrderId(): string {
@@ -46,6 +51,18 @@ export class Api {
 
   checkout(req: CheckoutRequest): Promise<Payment> {
     return this.post<Payment>('/api/shop/v1/checkout', req);
+  }
+
+  getPayments(): Promise<PaymentListResponse> {
+    return this.get<PaymentListResponse>('/api/shop/v1/payments');
+  }
+
+  refundPayment(paymentId: string, req: RefundRequest): Promise<Refund> {
+    return this.post<Refund>(`/api/shop/v1/payments/${encodeURIComponent(paymentId)}/refund`, req);
+  }
+
+  getWebhooks(): Promise<WebhookEvent[]> {
+    return this.get<WebhookEvent[]>('/api/shop/v1/webhooks');
   }
 
   getTestCards(): Promise<TestCard[]> {

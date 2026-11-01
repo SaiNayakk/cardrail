@@ -21,12 +21,35 @@ export interface PaymentCard {
   last4: string;
 }
 
+export interface Refund {
+  id: string;
+  object: 'refund';
+  amount: number;
+  status: 'pending' | 'succeeded' | 'failed';
+  reference: string;
+  failureReason?: string;
+  payment: string;
+  createdAt: string;
+}
+
 export interface Payment {
   id: string;
   object: 'payment';
   amount: number;
   currency: string;
-  status: 'authorised' | 'declined' | 'unknown';
+  status:
+    | 'captured'
+    | 'authorised'
+    | 'declined'
+    | 'unknown'
+    | 'voided'
+    | 'reversed'
+    | 'failed'
+    | 'pending';
+  capture?: boolean;
+  amountCaptured?: number;
+  amountRefunded?: number;
+  refunds?: Refund[];
   card: PaymentCard;
   reference: string;
   authCode?: string;
@@ -34,6 +57,24 @@ export interface Payment {
   declineReason?: string;
   description?: string;
   createdAt: string;
+}
+
+export interface PaymentListResponse {
+  object: 'list';
+  data: Payment[];
+}
+
+export interface RefundRequest {
+  amount?: number;
+  requestId: string;
+}
+
+export interface WebhookEvent {
+  id: string;
+  object: 'event';
+  type: string;
+  createdAt: string;
+  data: Payment | Refund | Record<string, unknown>;
 }
 
 export interface Problem {

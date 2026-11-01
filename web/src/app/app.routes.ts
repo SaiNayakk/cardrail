@@ -27,6 +27,11 @@ export const routes: Routes = [
     title: 'Recent traces · cardrail',
   },
   {
+    path: 'how-it-works',
+    loadComponent: () => import('./pages/how-it-works').then((m) => m.HowItWorks),
+    title: 'How card payments work · cardrail',
+  },
+  {
     path: '**',
     redirectTo: '',
   },
