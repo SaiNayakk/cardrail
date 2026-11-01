@@ -25,11 +25,13 @@ class AcquirerController {
 
     private final AcquirerStore store;
     private final Authorising authorising;
+    private final Reversing reversing;
     private final TraceReporter trace;
 
-    AcquirerController(AcquirerStore store, Authorising authorising, TraceReporter trace) {
+    AcquirerController(AcquirerStore store, Authorising authorising, Reversing reversing, TraceReporter trace) {
         this.store = store;
         this.authorising = authorising;
+        this.reversing = reversing;
         this.trace = trace;
     }
 
@@ -69,7 +71,7 @@ class AcquirerController {
     @PostMapping("/internal/v1/authorisations")
     Authorising.Result authorise(@Valid @RequestBody AuthoriseRequest r) {
         var result = authorising.authorise(new Authorising.Request(r.mid(), r.tid(), r.pan(), r.expiry(), r.cvv2(),
-                r.amountCents(), r.currency(), r.rrn()));
+                r.amountCents(), r.currency(), r.rrn(), null));
         String summary = switch (result.status()) {
             case "APPROVED" -> "Approved, code " + result.authCode();
             case "DECLINED" -> "Declined: " + result.responseText();
@@ -77,5 +79,47 @@ class AcquirerController {
         };
         trace.note(r.rrn(), Parties.ACQUIRER, Parties.GATEWAY, summary, Map.of("status", result.status()));
         return result;
+    }
+
+    record RefundRequest(@Pattern(regexp = "[A-Za-z0-9]{12}") String originalRrn, @NotBlank String mid,
+                         @Pattern(regexp = "[0-9]{12,19}") String pan, @Pattern(regexp = "[0-9]{4}") String expiry,
+                         @Min(1) @Max(99_999_999_99L) long amountCents, @Pattern(regexp = "[A-Za-z0-9]{12}") String rrn) {}
+
+    /** A refund: an 0100 with processing code 20, approved by the issuer, cleared as a credit. */
+    @PostMapping("/internal/v1/refunds")
+    Authorising.Result refund(@Valid @RequestBody RefundRequest r) {
+        var result = authorising.authorise(new Authorising.Request(r.mid(), null, r.pan(), r.expiry(), null, r.amountCents(),
+                "USD", r.rrn(), r.originalRrn()));
+        trace.note(r.rrn(), Parties.ACQUIRER, Parties.GATEWAY, "Refund " + result.status().toLowerCase()
+                + (result.responseCode() == null || "00".equals(result.responseCode()) ? "" : ": " + result.responseText()),
+                Map.of("status", result.status(), "refundOf", r.originalRrn()));
+        return result;
+    }
+
+    @PostMapping("/internal/v1/authorisations/{rrn}/void")
+    Reversing.Outcome voidPayment(@PathVariable String rrn) {
+        Reversing.Outcome outcome = reversing.voidPayment(rrn);
+        trace.note(rrn, Parties.ACQUIRER, Parties.GATEWAY, "REVERSED".equals(outcome.status()) ? "Voided: the hold is released"
+                : "Void accepted: the network will be told until it hears it", Map.of("status", outcome.status()));
+        return outcome;
+    }
+
+    record CaptureRequest(@Min(1) long amountCents) {}
+
+    @PostMapping("/internal/v1/authorisations/{rrn}/capture")
+    Reversing.Outcome capture(@PathVariable String rrn, @Valid @RequestBody CaptureRequest r) {
+        Reversing.Outcome outcome = reversing.capture(rrn, r.amountCents());
+        trace.note(rrn, Parties.ACQUIRER, Parties.GATEWAY, "Captured: settled with the next clearing",
+                Map.of("capturedCents", r.amountCents()));
+        return outcome;
+    }
+
+    record AuthorisationView(String rrn, String kind, String status, long amountCents, long capturedCents, String responseCode,
+                             String authCode) {}
+
+    @GetMapping("/internal/v1/authorisations/{rrn}")
+    AuthorisationView authorisation(@PathVariable String rrn) {
+        var a = store.authorisation(rrn).orElseThrow(() -> ApiException.notFound("authorisation " + rrn));
+        return new AuthorisationView(a.rrn(), a.kind(), a.status(), a.amountCents(), a.capturedCents(), a.responseCode(), a.authCode());
     }
 }

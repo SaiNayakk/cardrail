@@ -49,6 +49,12 @@ class VaultTest {
 
         assertThat(jdbc.sql("select cvc_encrypted is null from tokens where id = ?").param(token.id()).query(Boolean.class).single()).isTrue();
         assertThatThrownBy(() -> vault.reveal(token.id(), "m_1")).hasMessageContaining("used already");
+
+        // the card is kept for refunds, without its security code, for the same merchant only
+        var kept = vault.revealCard(card.cardRef(), "m_1");
+        assertThat(kept.pan()).isEqualTo("2860010000000012");
+        assertThat(kept.cvc()).isNull();
+        assertThatThrownBy(() -> vault.revealCard(card.cardRef(), "m_2")).hasMessageContaining("doesn't exist");
     }
 
     @Test

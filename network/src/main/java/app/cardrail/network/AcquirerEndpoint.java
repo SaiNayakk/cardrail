@@ -40,11 +40,8 @@ class AcquirerEndpoint implements SmartLifecycle {
         String acquirer = Parties.acquirer(request.get(32));
         return switch (request.mti()) {
             case "0100" -> network.authorise(request, acquirer);
-            case "0800" -> {
-                IsoMessage response = request.response(APPROVED);
-                trace.iso(request.get(37), Parties.RAILNET, acquirer, response);
-                yield response;
-            }
+            case "0400", "0420" -> network.reverse(request, acquirer);
+            case "0800" -> request.response(APPROVED);   // echoes stay out of the trace
             default -> {
                 log.warn("Railnet doesn't route {} yet", request.mti());
                 yield request.mti().charAt(2) % 2 == 0 ? request.response(INVALID_TRANSACTION) : null;

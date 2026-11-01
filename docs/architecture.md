@@ -71,9 +71,61 @@ sequenceDiagram
 - **A repeat gets the first answer.** The issuer records each request by acquirer, RRN and trace number, the
   network by the acquirer's, and the gateway by idempotency key. A repeat is answered from the record and
   never decided twice.
-- **No answer is not a decline.** If Kestrel Bank doesn't answer in 3 s, Railnet answers 91 (issuer
-  unavailable). If Railnet doesn't answer the acquirer in 5 s, the payment is UNKNOWN, never declined, because
-  the issuer may have placed a hold. (Phase 2 reverses those with 0420.)
+- **No answer is not a decline.** If Railnet doesn't answer the acquirer in 5 s, the payment is UNKNOWN, never
+  declined, because the issuer may have placed a hold. It is reversed until someone hears it (below).
+
+## After the authorisation
+
+```mermaid
+stateDiagram-v2
+  [*] --> authorised: 0110 approved
+  [*] --> declined: 0110 declined
+  [*] --> unknown: no answer
+  authorised --> captured: capture (all or part)
+  authorised --> voided: void (0400, the hold released now)
+  unknown --> reversed: the acquirer's 0420 is acknowledged
+  captured --> captured: refund (an 0100 with processing code 20, its own reference)
+```
+
+- **Dual message.** An authorisation (0100) only holds the money. Capture records how much the merchant takes;
+  the money moves when the day is cleared (phase 3), and anything not captured is released then.
+- **Void** sends an 0400 so the issuer releases the hold at once. If the network can't be asked, the void is
+  accepted and owed as an 0420.
+- **Refund** is an authorisation of its own (processing code 20, as Visa and Mastercard now require), with its
+  own reference and trace. The vault keeps the card a payment was made with (without its security code) so a
+  refund doesn't need the shopper again. Refunds can't add up to more than was captured.
+- **Webhooks** tell the merchant each change, from an outbox, signed ([ADR-009](decisions.md#adr-009-webhooks)).
+- **The merchant API has two versions** ([ADR-006](decisions.md#adr-006-api-versions)).
+
+## When someone doesn't answer
+
+```mermaid
+sequenceDiagram
+  participant A as Acquirer
+  participant N as Railnet
+  participant K as Kestrel Bank
+  N->>K: 0800 echo, every 5 s
+  Note over K: frozen
+  A->>N: 0100 ($19.99)
+  N-xK: 0100 (no answer in 3 s)
+  Note over N: stand-in: Luhn, expiry, under $100, under 3 and $200 today
+  N-->>A: 0110 approved (by Railnet)
+  Note over N: 0120 advice stored, encrypted
+  Note over K: answers echoes again
+  N->>K: 0120 advice (in order, until acknowledged)
+  K-->>N: 0130
+```
+
+- **The issuer is down** ([ADR-007](decisions.md#adr-007-stand-in)): Railnet stands in within Kestrel Bank's
+  limits, and owes it an 0120 advice for each approval and an 0420 for any payment it forwarded but declined
+  (Kestrel may approve that one late). Kestrel is bound by a stand-in approval, even over a decline of its own
+  whose answer was lost.
+- **The network is down** ([ADR-008](decisions.md#adr-008-reversals)): the acquirer's payment is UNKNOWN, and it
+  owes Railnet an 0420 until Railnet acknowledges one. Railnet routes it to the issuer that had the original, or
+  accepts it for an issuer that is down and delivers it later. A reversal of an original nobody has seen is
+  remembered at the network and the issuer, so if the original arrives late it is declined there and never held.
+- **Reversals carry no card number.** Field 37 (the reference) and field 90 (the original's MTI, trace number,
+  time and acquirer) are enough: every party finds the original by reference.
 
 ## Card data
 
@@ -95,9 +147,10 @@ tag-length-value style; subelement 92 is the CVV2. See [`MessageSpec`](https://g
 |---|---|---|
 | 0100 / 0110 | 1 | Authorisation request and response (dual message: money moves at clearing) |
 | 0800 / 0810 | 1 | Network management: echo, sign-on |
-| 0120 / 0130 | 2 | Authorisation advice: what the network decided while standing in |
-| 0200 / 0210 | 2 | Financial request (single message: authorised and posted at once) |
-| 0400 / 0410, 0420 / 0430 | 2 | Reversal request and advice |
+| 0120 / 0130 | 2 | Authorisation advice: what the network approved while standing in |
+| 0400 / 0410 | 2 | Reversal request: a void |
+| 0420 / 0430 | 2 | Reversal advice: a payment that got no answer, or a void that couldn't be asked; repeated until acknowledged |
+| 0100 with processing code 20 | 2 | A refund's authorisation |
 
 ## Test cards
 

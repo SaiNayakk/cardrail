@@ -69,6 +69,7 @@ services:
       NETWORK_ISO_BIND: 0.0.0.0
       TRACE_BIND: 0.0.0.0
       NETWORK_KESTREL_HOST: issuing
+      NETWORK_KEY: cHJlcHJvZC1vbmx5LW5ldHdvcmsta2V5LTAwMDAwMDU=
     healthcheck:
       test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:8204/actuator/health/readiness | grep -q UP && wget -qO- http://127.0.0.1:8206/actuator/health/readiness | grep -q UP"]
       interval: 3s
@@ -96,6 +97,7 @@ services:
       VAULT_KEY: cHJlcHJvZC1vbmx5LXZhdWx0LWtleS0wMDAwMDAwMDQ=
       DEMOSHOP_SECRET_KEY: sk_test_preprodOnlyDemoShopSecretKey0001
       DEMOSHOP_PUBLISHABLE_KEY: pk_test_preprodOnlyDemoShop01
+      DEMOSHOP_WEBHOOK_SECRET: whsec_preprodOnlyDemoShopWebhookSecret01
     healthcheck:
       test: ["CMD-SHELL", "for p in 8201 8202 8203 8207; do wget -qO- http://127.0.0.1:$$p/actuator/health/readiness | grep -q UP || exit 1; done"]
       interval: 3s

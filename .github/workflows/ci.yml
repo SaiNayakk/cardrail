@@ -138,7 +138,9 @@ jobs:
       - name: Create pre-prod
         run: docker compose -f preprod/docker-compose.yml up -d --build --wait --wait-timeout 300
       - name: End-to-end tests
-        run: ./mvnw -B -pl e2e test -De2e.baseUrl=http://127.0.0.1:8280
+        run: ./mvnw -B -pl e2e test -De2e.baseUrl=http://127.0.0.1:8280 -Dtest='AuthorisationJourneyTest'
+      - name: Chaos experiments
+        run: ./mvnw -B -pl e2e test -De2e.baseUrl=http://127.0.0.1:8280 -De2e.chaos=${{ github.workspace }}/preprod/docker-compose.yml -Dtest='ChaosTest' -Dsurefire.reportNameSuffix=chaos
       - name: Memory each host used
         if: always()
         run: docker stats --no-stream --format '{{.Name}} {{.MemUsage}}' | tee preprod-memory.txt

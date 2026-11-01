@@ -37,7 +37,8 @@ public class Vault {
 
     public record TokenView(String id, String bin, String last4, int expMonth, int expYear, String brand, Instant expiresAt) {}
 
-    public record Revealed(String pan, String expiry, String cvc) {}
+    /** @param cardRef the card kept for this payment (crd_...), for refunds later */
+    public record Revealed(String pan, String expiry, String cvc, String cardRef) {}
 
     private final JdbcClient jdbc;
     private final SecretKeySpec key;
@@ -100,9 +101,24 @@ public class Vault {
         if (row.expiresAt().isBefore(clock.instant())) {
             throw new ApiException(HttpStatus.GONE, "token_expired", "this token has expired; ask for the card again");
         }
-        jdbc.sql("update tokens set used_at = now(), cvc_encrypted = null where id = ?").param(tokenId).update();
-        return new Revealed(open(tokenId, row.panEncrypted()), row.expiry(),
-                row.cvcEncrypted() == null ? null : open(tokenId + ":cvc", row.cvcEncrypted()));
+        String pan = open(tokenId, row.panEncrypted());
+        String cardRef = "crd_" + random(24);
+        jdbc.sql("""
+                insert into cards (id, merchant_id, pan_encrypted, bin, last4, expiry) values (?, ?, ?, ?, ?, ?)""")
+                .params(cardRef, merchantId, seal(cardRef, pan), pan.substring(0, 6), pan.substring(pan.length() - 4), row.expiry())
+                .update();
+        jdbc.sql("update tokens set used_at = now(), cvc_encrypted = null, card_id = ? where id = ?").params(cardRef, tokenId).update();
+        return new Revealed(pan, row.expiry(), row.cvcEncrypted() == null ? null : open(tokenId + ":cvc", row.cvcEncrypted()), cardRef);
+    }
+
+    /** The card kept for a payment, for its merchant: a refund needs the number. Never a security code. */
+    public Revealed revealCard(String cardRef, String merchantId) {
+        record Row(String merchantId, byte[] panEncrypted, String expiry) {}
+        Row row = jdbc.sql("select merchant_id, pan_encrypted, expiry from cards where id = ?").param(cardRef)
+                .query(Row.class).optional()
+                .filter(r -> r.merchantId().equals(merchantId))
+                .orElseThrow(() -> ApiException.notFound("card " + cardRef));
+        return new Revealed(open(cardRef, row.panEncrypted()), row.expiry(), null, cardRef);
     }
 
     /** Expired tokens are deleted: a card typed in and never paid with isn't kept. */

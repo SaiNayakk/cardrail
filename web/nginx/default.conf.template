@@ -49,9 +49,11 @@ server {
         add_header Cache-Control "no-store" always;
     }
 
-    # Railpay's public merchant API, for anyone who wants to try it with curl
+    # Railpay's public merchant API, for anyone who wants to try it with curl: /api/railpay/v2/payments, or
+    # /api/railpay/payments for version 1 as it was first published
     location /api/railpay/ {
         set $gateway http://${ACQUIRING}:8201;
+        rewrite ^/api/railpay/(v[0-9]+/.*)$ /$1 break;
         rewrite ^/api/railpay/(.*)$ /v1/$1 break;
         proxy_pass $gateway;
         proxy_set_header Authorization $http_authorization;

@@ -24,3 +24,17 @@ and checks the result and its trace.
 | E2E-05 | No full card number, expiry or security code appears in a trace |
 | E2E-06 | The edge never forwards internal or actuator routes |
 | E2E-07 | The merchant API refuses a call without a secret key |
+| E2E-08 | A refund is its own authorisation (processing code 20) with its own trace, and can't exceed what was paid |
+| E2E-09 | The shop is told by a signed webhook, which it checks before believing |
+| E2E-10 | Version 1 of the merchant API is still answered at its first address, and version 2 at its own |
+
+## Chaos experiments
+
+They pause real containers in pre-prod, then check that nobody is charged for a payment the merchant was told
+failed, and no approval the merchant was told about is lost.
+
+| Id | Hypothesis |
+|---|---|
+| CHAOS-01 | Kestrel Bank freezes: Railnet stands in within its limits ($19.99 approved, $250 declined 91), and once Kestrel answers again it receives the 0120 advice, and an 0420 for any forwarded payment stand-in declined |
+| CHAOS-02 | Railnet freezes mid-payment: the payment is unknown, never declined; once Railnet is back the original goes through after all and the acquirer's 0420 reverses it at the issuer; the merchant sees "reversed" |
+| CHAOS-03 | After every experiment, payments work normally again, with no stand-in |

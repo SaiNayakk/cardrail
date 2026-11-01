@@ -109,21 +109,22 @@ import { SidePanel } from '../ui/side-panel';
                         [class.arrow-forward]="arrow.direction === 'forward'"
                         [class.arrow-backward]="arrow.direction === 'backward'"
                         [class.arrow-self]="arrow.direction === 'self'"
+                        [class.arrow-stand-in]="arrow.isStandIn"
                         [style.left.%]="arrow.leftPercent"
                         [style.width.%]="arrow.widthPercent"
                         (click)="selectEvent(arrow.event)"
                         [attr.aria-label]="'Inspect message: ' + arrow.label"
                       >
-                        <div class="arrow-shaft">
+                        <div class="arrow-shaft" [class.shaft-stand-in]="arrow.isStandIn">
                           @if (arrow.direction === 'backward') {
                             <svg class="arrowhead arrow-left" viewBox="0 0 10 10" aria-hidden="true">
                               <polygon points="10,0 0,5 10,10" fill="currentColor" />
                             </svg>
                           }
 
-                          <span class="arrow-label-pill">
+                          <span class="arrow-label-pill" [class.pill-stand-in]="arrow.isStandIn">
                             @if (arrow.event.kind === 'iso8583') {
-                              <span class="mti-tag mono">{{ arrow.event.mti }}</span>
+                              <span class="mti-tag mono" [title]="arrow.mtiName || ''">{{ arrow.event.mti }}</span>
                             }
                             <span class="summary-text">{{ arrow.event.summary }}</span>
                           </span>
@@ -141,6 +142,10 @@ import { SidePanel } from '../ui/side-panel';
               </div>
             </div>
           </div>
+          <div class="diagram-legend faint small">
+            <span class="legend-badge" aria-hidden="true"></span>
+            <span>Dashed: Railnet decided for the issuer (stand-in)</span>
+          </div>
         </div>
 
         <!-- Narrow Screen Step-by-Step Fallback (shown below 768px) -->
@@ -150,6 +155,7 @@ import { SidePanel } from '../ui/side-panel';
             <button
               type="button"
               class="step-card"
+              [class.step-stand-in]="arrow.isStandIn"
               (click)="selectEvent(arrow.event)"
             >
               <div class="step-card-header">
@@ -163,12 +169,16 @@ import { SidePanel } from '../ui/side-panel';
               </div>
               <div class="step-summary">
                 @if (arrow.event.kind === 'iso8583' && arrow.event.mti) {
-                  <span class="mti-tag mono">{{ arrow.event.mti }}</span>
+                  <span class="mti-tag mono" [title]="arrow.mtiName || ''">{{ arrow.event.mti }}</span>
                 }
                 <span class="step-desc">{{ arrow.event.summary }}</span>
               </div>
             </button>
           }
+          <div class="diagram-legend faint small">
+            <span class="legend-badge" aria-hidden="true"></span>
+            <span>Dashed: Railnet decided for the issuer (stand-in)</span>
+          </div>
         </div>
       }
 
@@ -430,6 +440,42 @@ import { SidePanel } from '../ui/side-panel';
     .summary-text {
       overflow: hidden;
       text-overflow: ellipsis;
+    }
+
+    .pill-stand-in {
+      border: 1.5px dashed var(--accent);
+      background-color: var(--accent-soft);
+    }
+
+    .shaft-stand-in {
+      background: repeating-linear-gradient(
+        to right,
+        var(--accent) 0,
+        var(--accent) 4px,
+        transparent 4px,
+        transparent 8px
+      );
+    }
+
+    .step-stand-in {
+      border: 1.5px dashed var(--accent);
+      background-color: var(--accent-soft);
+    }
+
+    .diagram-legend {
+      margin-top: 16px;
+      padding-top: 12px;
+      border-top: 1px solid var(--line);
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .legend-badge {
+      display: inline-block;
+      width: 24px;
+      height: 2px;
+      border-top: 2px dashed var(--accent);
     }
 
     /* Narrow Screen Steps (Fallback on small displays) */

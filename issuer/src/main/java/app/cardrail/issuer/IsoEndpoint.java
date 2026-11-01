@@ -37,13 +37,16 @@ class IsoEndpoint implements SmartLifecycle {
         // Each party reports what it sends, so every hop appears once in the trace.
         IsoMessage response = switch (request.mti()) {
             case "0100" -> authoriser.authorise(request);
+            case "0120" -> authoriser.advise(request);
+            case "0400", "0420" -> authoriser.reverse(request);
             case "0800" -> request.response(APPROVED);
             default -> {
                 log.warn("Kestrel Bank doesn't handle {} yet", request.mti());
                 yield request.mti().charAt(2) % 2 == 0 ? request.response(INVALID_TRANSACTION) : null;
             }
         };
-        if (response != null) {
+        if (response != null && !"0800".equals(request.mti())) {
+            // echoes every few seconds would bury the payments in the trace
             trace.iso(request.get(37), Parties.KESTREL, Parties.RAILNET, response);
         }
         return response;

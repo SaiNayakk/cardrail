@@ -8,7 +8,7 @@ import {
   input,
   output,
 } from '@angular/core';
-import { formatIsoField, FormattedIsoField } from '../core/iso8583';
+import { formatIsoField, FormattedIsoField, getMtiName } from '../core/iso8583';
 import { PARTY_NAMES, TraceEvent } from '../core/types';
 
 interface NoteDetailField {
@@ -64,7 +64,7 @@ interface NoteDetailField {
             @if (ev.mti) {
               <div class="meta-row">
                 <span class="meta-label">MTI</span>
-                <span class="meta-value mono">{{ ev.mti }}</span>
+                <span class="meta-value mono">{{ ev.mti }} &middot; {{ mtiName(ev.mti) }}</span>
               </div>
             }
             <div class="meta-row">
@@ -94,7 +94,18 @@ interface NoteDetailField {
                         <tr>
                           <td class="mono num">{{ item.field }}</td>
                           <td class="field-name">{{ item.name }}</td>
-                          <td class="mono field-val">{{ item.formattedValue }}</td>
+                          <td class="mono field-val">
+                            <div>{{ item.formattedValue }}</div>
+                            @if (item.split90; as s) {
+                              <div class="field90-breakdown">
+                                <div class="split-row"><span class="split-k">Original MTI (4):</span> <span class="split-v">{{ s.originalMti }}</span></div>
+                                <div class="split-row"><span class="split-k">Trace number (6):</span> <span class="split-v">{{ s.traceNumber }}</span></div>
+                                <div class="split-row"><span class="split-k">Sent at (10):</span> <span class="split-v">{{ s.sentAt }}</span></div>
+                                <div class="split-row"><span class="split-k">Acquirer (11):</span> <span class="split-v">{{ s.acquirer }}</span></div>
+                                <div class="split-row"><span class="split-k">Forwarding inst (11):</span> <span class="split-v">{{ s.forwardingInstitution }}</span></div>
+                              </div>
+                            }
+                          </td>
                         </tr>
                       }
                     </tbody>
@@ -293,6 +304,33 @@ interface NoteDetailField {
       word-break: break-all;
     }
 
+    .field90-breakdown {
+      margin-top: 6px;
+      padding: 6px 8px;
+      background-color: var(--surface-subtle);
+      border: 1px solid var(--line);
+      border-radius: var(--radius-sm);
+      display: flex;
+      flex-direction: column;
+      gap: 3px;
+      font-size: 0.75rem;
+    }
+
+    .split-row {
+      display: flex;
+      justify-content: space-between;
+      gap: 8px;
+    }
+
+    .split-k {
+      color: var(--ink-faint);
+    }
+
+    .split-v {
+      color: var(--ink);
+      font-weight: 600;
+    }
+
     .empty-note {
       font-size: 0.8125rem;
       color: var(--ink-muted);
@@ -345,5 +383,9 @@ export class SidePanel {
 
   protected partyName(partyId: string): string {
     return PARTY_NAMES[partyId] ?? partyId;
+  }
+
+  protected mtiName(mti: string | null | undefined): string {
+    return getMtiName(mti);
   }
 }

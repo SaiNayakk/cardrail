@@ -63,4 +63,10 @@ class VaultController {
     Vault.Revealed reveal(@PathVariable String id, @Valid @RequestBody RevealRequest r) {
         return vault.reveal(id, r.merchantId());
     }
+
+    /** The gateway, refunding, asks for the card a payment was made with. */
+    @PostMapping("/internal/v1/cards/{id}/reveal")
+    Vault.Revealed revealCard(@PathVariable String id, @Valid @RequestBody RevealRequest r) {
+        return vault.revealCard(id, r.merchantId());
+    }
 }

@@ -27,6 +27,11 @@ import { RouterLink, RouterLinkActive } from '@angular/router';
             class="nav-link"
           >Shop</a>
           <a
+            routerLink="/how-it-works"
+            routerLinkActive="active"
+            class="nav-link"
+          >How it works</a>
+          <a
             routerLink="/test-cards"
             routerLinkActive="active"
             class="nav-link"

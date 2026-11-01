@@ -60,7 +60,11 @@ public final class IsoLink implements AutoCloseable {
     public CompletableFuture<IsoMessage> send(IsoMessage request, Duration timeout) {
         String key = key(request);
         CompletableFuture<IsoMessage> response = new CompletableFuture<>();
-        if (pending.putIfAbsent(key, response) != null) {
+        CompletableFuture<IsoMessage> earlier = pending.putIfAbsent(key, response);
+        if (earlier != null && earlier.isDone() && pending.replace(key, earlier, response)) {
+            earlier = null;   // that one was answered or timed out and was about to go: this one takes its place
+        }
+        if (earlier != null) {
             return CompletableFuture.failedFuture(new IllegalStateException("a request with key " + key + " is already waiting"));
         }
         response.orTimeout(timeout.toMillis(), TimeUnit.MILLISECONDS)
@@ -143,7 +147,8 @@ public final class IsoLink implements AutoCloseable {
                     log.warn("{}: unreadable response: {}", name, e.getMessage());
                     continue;
                 }
-                CompletableFuture<IsoMessage> waiting = pending.get(key(response));
+                // removed before it is completed, so whoever was waiting can send the same key again at once
+                CompletableFuture<IsoMessage> waiting = pending.remove(key(response));
                 if (waiting == null) {
                     log.warn("{}: a {} arrived that nobody is waiting for (late, or a duplicate)", name, response.mti());
                 } else {
