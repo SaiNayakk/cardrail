@@ -90,7 +90,7 @@ public class Switch {
         }
         String issuerParty = Parties.issuer(issuerId);
         if (!health.isUp(issuerId)) {
-            return standIn(request, issuerId, acquirerParty, issuerParty + " isn't answering");
+            return standIn(request, issuerId, acquirerParty, issuerParty + " isn't answering", false);
         }
 
         IsoMessage forwarded = copy(request).set(11, networkStan).set(33, props.institutionId()).set(100, issuerId);
@@ -105,16 +105,26 @@ public class Switch {
             health.missed(issuerId);
             log.warn("Issuer {} didn't answer {}: {}", issuerId, rrn, cause.getMessage());
             return standIn(request, issuerId, acquirerParty, cause instanceof IsoTimeoutException
-                    ? "No answer within " + props.issuerTimeout().toMillis() + " ms" : issuerParty + " unreachable");
+                    ? "No answer within " + props.issuerTimeout().toMillis() + " ms" : issuerParty + " unreachable", true);
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
             return decided(request, request.response(SYSTEM_ERROR), acquirerParty, NETWORK);
         }
     }
 
-    private IsoMessage standIn(IsoMessage request, String issuerId, String acquirerParty, String why) {
+    /**
+     * @param mayHaveArrived the issuer may have received the request and approved it late; if stand-in declines,
+     *                       the issuer is told to reverse it, or it would hold money for a payment that failed
+     */
+    private IsoMessage standIn(IsoMessage request, String issuerId, String acquirerParty, String why, boolean mayHaveArrived) {
         IsoMessage response = standIn.decide(request, issuerId);
         boolean approved = APPROVED.equals(response.get(39));
+        if (!approved && mayHaveArrived) {
+            IsoMessage owed = copyAs("0420", copy(request).set(33, props.institutionId()).set(100, issuerId)
+                    .set(90, request.mti() + request.get(11) + (request.has(7) ? request.get(7) : "0".repeat(10))
+                            + String.format("%011d", Long.parseLong(request.get(32))) + "0".repeat(11)));
+            store.enqueueAdvice(issuerId, request.get(32), request.get(37), "0420", keys.seal(codec.encode(owed)));
+        }
         trace.note(request.get(37), Parties.RAILNET, Parties.issuer(issuerId), why + ": Railnet stands in and "
                 + (approved ? "approves, telling the issuer later (0120)" : "declines"), Map.of("decidedBy", "stand-in"));
         return decided(request, response, acquirerParty, STAND_IN);
@@ -140,8 +150,11 @@ public class Switch {
             return reply(reversal, reversal.response(advice ? APPROVED : ORIGINAL_NOT_FOUND), acquirerParty);
         }
         String issuerId = original.get().issuerId();
-        if (issuerId == null || !APPROVED.equals(original.get().responseCode())) {
-            // nothing was held anywhere: no route, or declined
+        String code = original.get().responseCode();
+        boolean nothingHeld = issuerId == null
+                || NETWORK.equals(original.get().decidedBy())
+                || (code != null && !APPROVED.equals(code));   // declined by the issuer, or by stand-in (which then reversed it)
+        if (nothingHeld) {
             store.reversed(acquirer, rrn);
             return reply(reversal, reversal.response(APPROVED), acquirerParty);
         }

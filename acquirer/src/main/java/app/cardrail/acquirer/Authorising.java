@@ -23,9 +23,9 @@ import java.util.concurrent.ExecutionException;
 import static app.cardrail.iso8583.ResponseCode.APPROVED;
 
 /**
- * Turns a payment into an ISO 8583 authorisation request (0100), sends it to Railnet and reads the answer.
- * An answer that never comes leaves the authorisation UNKNOWN: the money may be held at the issuer, so it is
- * never reported as declined.
+ * Turns a payment (or a refund) into an ISO 8583 authorisation request (0100), sends it to Railnet and reads the
+ * answer. An answer that never comes leaves the authorisation UNKNOWN: the money may be held at the issuer, so it
+ * is never reported as declined, and a reversal (0420) is owed to the network until it acknowledges one.
  */
 @Service
 public class Authorising {
@@ -35,8 +35,14 @@ public class Authorising {
     private static final DateTimeFormatter FIELD_12 = DateTimeFormatter.ofPattern("HHmmss");
     private static final DateTimeFormatter FIELD_13 = DateTimeFormatter.ofPattern("MMdd");
 
+    /** A purchase, or (with {@code originalRrn}) a refund of one. */
     public record Request(String mid, String tid, String pan, String expiry, String cvv2, long amountCents,
-                          String currency, String rrn) {}
+                          String currency, String rrn, String originalRrn) {
+
+        boolean refund() {
+            return originalRrn != null;
+        }
+    }
 
     public record Result(String rrn, String stan, String status, String responseCode, String responseText, String authCode) {}
 
@@ -71,18 +77,30 @@ public class Authorising {
         ZonedDateTime now = ZonedDateTime.now(clock.withZone(ZoneOffset.UTC));
         String stan = network.nextStan();
         String transmitted = now.format(FIELD_7);
-        if (!store.pending(merchant.id(), tid, r.rrn(), stan, transmitted, r.pan(), r.amountCents(), "840")) {
+        if (r.refund()) {
+            var original = store.authorisation(r.originalRrn())
+                    .filter(a -> a.merchantId().equals(merchant.id()) && "PURCHASE".equals(a.kind()))
+                    .orElseThrow(() -> ApiException.notFound("payment " + r.originalRrn()));
+            if (!"CAPTURED".equals(original.status())) {
+                throw ApiException.invalid("not_captured", "only a captured payment can be refunded; void it instead");
+            }
+            if (store.refundedCents(r.originalRrn()) + r.amountCents() > original.capturedCents()) {
+                throw ApiException.invalid("refund_too_large", "that would refund more than was captured");
+            }
+        }
+        if (!store.pending(merchant.id(), tid, r.rrn(), stan, transmitted, r.pan(), r.amountCents(), "840",
+                r.refund() ? "REFUND" : "PURCHASE", r.originalRrn())) {
             throw new ApiException(HttpStatus.CONFLICT, "duplicate_reference", "reference " + r.rrn() + " was used before");
         }
 
         Map<String, String> field48 = new LinkedHashMap<>();
         field48.put(Subelements.ECOMMERCE_SECURITY, "210");   // channel encrypted, cardholder not authenticated
-        if (r.cvv2() != null) {
+        if (r.cvv2() != null && !r.refund()) {
             field48.put(Subelements.CVV2, r.cvv2());
         }
         IsoMessage request = new IsoMessage("0100")
                 .set(2, r.pan())
-                .set(3, "000000")                                  // purchase, from the default account
+                .set(3, r.refund() ? "200000" : "000000")          // 00 purchase, 20 refund; from/to the default account
                 .set(4, String.format("%012d", r.amountCents()))
                 .set(7, transmitted)
                 .set(11, stan)
@@ -112,8 +130,10 @@ public class Authorising {
             boolean unknown = cause instanceof IsoTimeoutException;
             log.warn("Authorisation {} got no answer: {}", r.rrn(), cause.getMessage());
             if (unknown) {
+                // It may have been approved and money held. Tell the network it is reversed, until it hears us.
                 store.answered(r.rrn(), null, null, "UNKNOWN");
-                return new Result(r.rrn(), stan, "UNKNOWN", null, "No answer from the network", null);
+                store.oweReversal(r.rrn(), "NO_ANSWER", 0);
+                return new Result(r.rrn(), stan, "UNKNOWN", null, "No answer from the network; it is being reversed", null);
             }
             // never sent: nothing can be held anywhere
             store.answered(r.rrn(), ResponseCode.ISSUER_UNAVAILABLE, null, "DECLINED");

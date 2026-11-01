@@ -58,3 +58,61 @@ the network's most interesting failure. Grouping the rest keeps the phone's shar
 standby.
 
 **Lost.** The closed loop shares a JVM with the switch it is meant to be independent of.
+
+## ADR-006: A breaking change is a new version, served beside the old { #adr-006-api-versions }
+
+**Decision.** Railpay's merchant API is versioned in its path. Version 1 stays exactly as published
+(`contracts/gateway-v1.yaml`); version 2 adds capture, void, refunds and webhooks, and captures at once by default.
+CI compares every contract with `main` (oasdiff) and fails on a breaking change, so the only way to break one is a
+new file and a new path.
+
+**Why.** Phase 2 changed what an existing call returns: capturing by default turns "authorised" into "captured",
+and payments gained statuses (voided, reversed) a version 1 client was promised it would never see. The contract
+check failed on exactly that. A client written against version 1 keeps getting version 1: payments it makes are
+never captured, and a state it doesn't know is shown as the nearest one it does (captured as authorised, voided
+and reversed as failed).
+
+**Lost.** Two views of the same payment to keep correct. Cheap here; a real gateway keeps several for years.
+
+## ADR-007: Stand-in within the issuer's limits, told by advices that are never lost { #adr-007-stand-in }
+
+**Decision.** When an issuer is down (two missed echoes) or doesn't answer in 3 s, Railnet decides for it:
+approve a card that passes Luhn and hasn't expired, under a limit per payment ($100), per card per day (3 and
+$200), as Kestrel Bank set. Every stand-in approval is owed to the issuer as an 0120 advice; every payment the
+network forwarded but then declined (the issuer may approve it late) is owed as an 0420 reversal. Owed advices are
+stored encrypted and delivered in order, one at a time, until acknowledged.
+
+**Why.** A card network that is down when an issuer is down loses everyone's sales; real networks stand in. But
+the network can't see balances or check a CVV2, so it takes only small risks, and the issuer, bound by what was
+approved, must hear about every one even if the network restarts in between. In order, because a reversal must
+never overtake what it reverses. CHAOS-01 checks it with the issuer frozen.
+
+**Lost.** A stand-in approval can overdraw an account (the issuer's risk, as in real networks). Limits are
+configuration, not a table each issuer can change.
+
+## ADR-008: No answer is never a decline; it is a reversal until someone hears it { #adr-008-reversals }
+
+**Decision.** A payment whose answer never came is UNKNOWN, never declined. The acquirer owes the network an
+0420 reversal for it and sends it with growing gaps until acknowledged; the gateway reports the payment as
+reversed once that happens. Reversals carry the original's reference (field 37) and field 90, not the card number:
+the network and the issuer find the original by reference. A reversal of something never seen is remembered, so an
+original arriving late is declined, not approved and held for nothing.
+
+**Why.** A timed-out request may still arrive: the issuer may approve it and hold the money for a payment the
+merchant thinks failed. Guessing "declined" leaves that hold; guessing "approved" ships goods unpaid. Reversing
+until heard makes every outcome end the same way, whatever was lost. CHAOS-02 freezes the network mid-payment: the
+original is approved after all, then reversed.
+
+**Lost.** A cardholder may see a hold for a few seconds or minutes before it is released.
+
+## ADR-009: Webhooks through an outbox, signed, at least once { #adr-009-webhooks }
+
+**Decision.** Each change of a payment or refund writes its webhook event in the same transaction. A sender
+delivers events with growing gaps (10 s doubling to an hour) for up to three days, signed with HMAC-SHA256 over
+the timestamp and body. The demo shop checks the signature and refuses deliveries more than five minutes old.
+
+**Why.** A merchant that ships goods on a webhook must never miss one, nor be fooled by a forged or replayed one.
+The outbox makes "the payment changed" and "the merchant will be told" one atomic fact; the signature and
+timestamp make a captured delivery useless later.
+
+**Lost.** A merchant may get an event twice and must use its id to ignore the repeat.

@@ -139,7 +139,20 @@ class SwitchTest {
         assertThat(small.get(39)).isEqualTo("00");
         assertThat(small.get(38)).hasSize(6);
         assertThat(large.get(39)).isEqualTo("91");
-        assertThat(pendingAdvices()).isEqualTo(1);
+        // the approval is owed as an 0120; the decline, which the issuer may approve late, as an 0420
+        assertThat(pendingAdvices()).isEqualTo(2);
+    }
+
+    @Test
+    void aForwardedPaymentThatStandInDeclinesIsReversedAtTheIssuer() throws Exception {
+        IsoMessage large = send(request(SILENT, 50_000));
+        assertThat(large.get(39)).isEqualTo("91");
+
+        health.answered("286001");
+        advices.deliver();
+
+        // The issuer may have approved it late: it is told to reverse it.
+        assertThat(seen("0420")).anyMatch(m -> m.get(37).equals(large.get(37)));
     }
 
     @Test

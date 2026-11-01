@@ -111,6 +111,51 @@ final class Edge {
         return payment.body();
     }
 
+    /** A payment's trace as "from>to kind-or-mti", once at least {@code expected} reports have arrived (they are sent in the background). */
+    java.util.List<String> hops(String reference, int expected) throws InterruptedException {
+        java.util.List<String> hops = new java.util.ArrayList<>();
+        for (int attempt = 0; attempt < 100; attempt++) {
+            Response trace = get("/api/trace/traces/" + reference);
+            hops.clear();
+            if (trace.status() == 200) {
+                for (JsonNode e : trace.body().get("events")) {
+                    hops.add(e.get("from").asText() + ">" + e.get("to").asText() + " "
+                            + ("iso8583".equals(e.get("kind").asText()) ? e.get("mti").asText() : "note"));
+                }
+            }
+            if (hops.size() >= expected) {
+                return hops;
+            }
+            Thread.sleep(200);
+        }
+        return hops;
+    }
+
+    /** The trace once it holds every one of {@code wanted} (waiting up to 40 s), or as it is by then. */
+    java.util.List<String> hopsIncluding(String reference, String... wanted) throws InterruptedException {
+        java.util.List<String> hops = java.util.List.of();
+        for (int attempt = 0; attempt < 200; attempt++) {
+            hops = hops(reference, 0);
+            if (hops.containsAll(java.util.List.of(wanted))) {
+                return hops;
+            }
+            Thread.sleep(200);
+        }
+        return hops;
+    }
+
+    /** The trace's notes' summaries. */
+    java.util.List<String> notes(String reference) {
+        java.util.List<String> notes = new java.util.ArrayList<>();
+        Response trace = get("/api/trace/traces/" + reference);
+        if (trace.status() == 200) {
+            for (JsonNode e : trace.body().get("events")) {
+                notes.add(e.get("summary").asText());
+            }
+        }
+        return notes;
+    }
+
     JsonNode testCard(String outcomeStartsWith) {
         for (JsonNode card : get("/api/test-cards").body()) {
             if (card.get("outcome").asText().startsWith(outcomeStartsWith)) {

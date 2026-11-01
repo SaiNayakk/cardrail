@@ -15,7 +15,7 @@ public class Merchants {
 
     public record Merchant(String id, String name, String acquirerMid, String secretKeyHint, String publishableKey, String webhookUrl) {}
 
-    public record Created(Merchant merchant, String secretKey) {}
+    public record Created(Merchant merchant, String secretKey, String webhookSecret) {}
 
     record AcquirerMerchant(String mid) {}
 
@@ -30,20 +30,22 @@ public class Merchants {
     }
 
     /** Signs a merchant up. Keys are made here unless given (the demo shop's come from the environment). */
-    public Created create(String name, String mcc, String city, String webhookUrl, String secretKey, String publishableKey) {
+    public Created create(String name, String mcc, String city, String webhookUrl, String secretKey, String publishableKey,
+                          String webhookSecret) {
         AcquirerMerchant onboarded = acquirer.post().uri("/internal/v1/merchants")
                 .body(Map.of("name", name, "mcc", mcc, "city", city, "country", "US"))
                 .retrieve().body(AcquirerMerchant.class);
         String mode = "live".equals(props.keyMode()) ? "live" : "test";
         String secret = secretKey != null ? secretKey : Keys.random("sk_" + mode + "_", 32);
         String publishable = publishableKey != null ? publishableKey : Keys.random("pk_" + mode + "_", 24);
+        String signing = webhookSecret != null ? webhookSecret : Keys.random("whsec_", 32);
         String id = Keys.random("mer_", 16);
         jdbc.sql("""
-                insert into merchants (id, name, acquirer_mid, secret_key_hash, secret_key_hint, publishable_key, webhook_url)
-                values (?, ?, ?, ?, ?, ?, ?)""")
-                .params(id, name, onboarded.mid(), Keys.sha256(secret), Keys.hint(secret), publishable, webhookUrl)
+                insert into merchants (id, name, acquirer_mid, secret_key_hash, secret_key_hint, publishable_key, webhook_url, webhook_secret)
+                values (?, ?, ?, ?, ?, ?, ?, ?)""")
+                .params(id, name, onboarded.mid(), Keys.sha256(secret), Keys.hint(secret), publishable, webhookUrl, signing)
                 .update();
-        return new Created(byId(id).orElseThrow(), secret);
+        return new Created(byId(id).orElseThrow(), secret, signing);
     }
 
     public Optional<Merchant> byId(String id) {
@@ -54,6 +56,11 @@ public class Merchants {
     public Optional<Merchant> byPublishableKey(String key) {
         return jdbc.sql("select id, name, acquirer_mid, secret_key_hint, publishable_key, webhook_url from merchants where publishable_key = ?")
                 .param(key).query(Merchant.class).optional();
+    }
+
+    public void setWebhook(String secretKey, String webhookUrl, String webhookSecret) {
+        jdbc.sql("update merchants set webhook_url = ?, webhook_secret = ? where secret_key_hash = ?")
+                .params(webhookUrl, webhookSecret, Keys.sha256(secretKey)).update();
     }
 
     public boolean secretKeyExists(String secretKey) {

@@ -18,5 +18,5 @@ public record GatewayProperties(
         String internalKey,
         Demo demo) {
 
-    public record Demo(boolean enabled, String secretKey, String publishableKey) {}
+    public record Demo(boolean enabled, String secretKey, String publishableKey, String webhookUrl, String webhookSecret) {}
 }

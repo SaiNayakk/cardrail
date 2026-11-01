@@ -40,6 +40,7 @@ class PaymentsApiTest {
     static final ObjectMapper JSON = new ObjectMapper();
     static final AtomicInteger authorisations = new AtomicInteger();
     static final AtomicInteger merchantsMade = new AtomicInteger();
+    static final java.util.List<Map.Entry<String, String>> webhooks = new java.util.concurrent.CopyOnWriteArrayList<>();
     static final HttpServer fakes;
 
     static {
@@ -53,17 +54,46 @@ class PaymentsApiTest {
                 if (token.equals("tok_missing")) {
                     reply(ex, 404, Map.of("code", "not_found"));
                 } else {
-                    reply(ex, 200, Map.of("pan", token.endsWith("decline") ? "2860010000000020" : "2860010000000012",
-                            "expiry", "3012", "cvc", "123"));
+                    String pan = token.endsWith("decline") ? "2860010000000020" : token.endsWith("unknown") ? "2860010000009997" : "2860010000000012";
+                    reply(ex, 200, Map.of("pan", pan, "expiry", "3012", "cvc", "123", "cardRef", "crd_" + pan));
                 }
             });
+            fakes.createContext("/internal/v1/cards/", ex -> {
+                String pan = ex.getRequestURI().getPath().split("/")[4].substring(4);
+                reply(ex, 200, Map.of("pan", pan, "expiry", "3012", "cardRef", "crd_" + pan));
+            });
+            fakes.createContext("/internal/v1/refunds", ex -> {
+                JsonNode body = JSON.readTree(ex.getRequestBody());
+                reply(ex, 200, Map.of("rrn", body.get("rrn").asText(), "stan", "000002", "status", "APPROVED", "responseCode", "00",
+                        "responseText", "Approved", "authCode", "RFD123"));
+            });
             fakes.createContext("/internal/v1/authorisations", ex -> {
+                String[] path = ex.getRequestURI().getPath().split("/");
+                if (path.length == 6) {   // /internal/v1/authorisations/{rrn}/capture or /void
+                    reply(ex, 200, Map.of("rrn", path[4], "status", path[5].equals("void") ? "REVERSED" : "CAPTURED"));
+                    return;
+                }
+                if (path.length == 5) {   // GET /internal/v1/authorisations/{rrn}: the unknown ones were reversed
+                    reply(ex, 200, Map.of("rrn", path[4], "kind", "PURCHASE", "status", "REVERSED", "amountCents", 1, "capturedCents", 0));
+                    return;
+                }
                 authorisations.incrementAndGet();
                 JsonNode body = JSON.readTree(ex.getRequestBody());
-                boolean decline = body.get("pan").asText().endsWith("0020");
-                reply(ex, 200, decline
-                        ? Map.of("rrn", body.get("rrn").asText(), "stan", "000001", "status", "DECLINED", "responseCode", "51", "responseText", "Insufficient funds")
-                        : Map.of("rrn", body.get("rrn").asText(), "stan", "000001", "status", "APPROVED", "responseCode", "00", "responseText", "Approved", "authCode", "QWE123"));
+                String pan = body.get("pan").asText();
+                String rrn = body.get("rrn").asText();
+                if (pan.endsWith("9997")) {
+                    reply(ex, 200, Map.of("rrn", rrn, "stan", "000001", "status", "UNKNOWN", "responseText", "No answer from the network"));
+                } else if (pan.endsWith("0020")) {
+                    reply(ex, 200, Map.of("rrn", rrn, "stan", "000001", "status", "DECLINED", "responseCode", "51", "responseText", "Insufficient funds"));
+                } else {
+                    reply(ex, 200, Map.of("rrn", rrn, "stan", "000001", "status", "APPROVED", "responseCode", "00", "responseText", "Approved", "authCode", "QWE123"));
+                }
+            });
+            fakes.createContext("/hooks", ex -> {
+                webhooks.add(Map.entry(ex.getRequestHeaders().getFirst("Railpay-Signature"),
+                        new String(ex.getRequestBody().readAllBytes(), StandardCharsets.UTF_8)));
+                ex.sendResponseHeaders(200, -1);
+                ex.close();
             });
             fakes.start();
         } catch (IOException e) {
@@ -87,6 +117,8 @@ class PaymentsApiTest {
         String fake = "http://127.0.0.1:" + fakes.getAddress().getPort();
         registry.add("gateway.vault-url", () -> fake);
         registry.add("gateway.acquirer-url", () -> fake);
+        registry.add("gateway.webhook-every", () -> "1h");
+        registry.add("gateway.resolve-every", () -> "1h");
     }
 
     @AfterAll
@@ -96,11 +128,118 @@ class PaymentsApiTest {
 
     @Autowired TestRestTemplate http;
     @Autowired Merchants merchants;
+    @Autowired Payments payments;
+    @Autowired Webhooks sender;
     private String secretKey;
+    private String webhookSecret;
 
     @BeforeEach
     void merchant() {
-        secretKey = merchants.create("Test shop", "5999", "Boston", null, null, null).secretKey();
+        var created = merchants.create("Test shop", "5999", "Boston", "http://127.0.0.1:" + fakes.getAddress().getPort() + "/hooks",
+                null, null, null);
+        secretKey = created.secretKey();
+        webhookSecret = created.webhookSecret();
+        webhooks.clear();
+    }
+
+    // Version 2: the whole lifecycle
+
+    @Test
+    void v2CapturesAtOnceUnlessAskedNotTo() throws Exception {
+        JsonNode now = JSON.readTree(v2("POST", "/payments", Map.of("amount", 1999, "currency", "usd", "source", "tok_good"), null).getBody());
+        assertThat(now.get("status").asText()).isEqualTo("captured");
+        assertThat(now.get("amountCaptured").asLong()).isEqualTo(1999);
+
+        JsonNode later = JSON.readTree(v2("POST", "/payments", Map.of("amount", 1999, "currency", "usd", "source", "tok_good",
+                "capture", false), null).getBody());
+        assertThat(later.get("status").asText()).isEqualTo("authorised");
+
+        JsonNode captured = JSON.readTree(v2("POST", "/payments/" + later.get("id").asText() + "/capture", Map.of("amount", 1500), null).getBody());
+        assertThat(captured.get("status").asText()).isEqualTo("captured");
+        assertThat(captured.get("amountCaptured").asLong()).isEqualTo(1500);
+    }
+
+    @Test
+    void v2VoidsAnUncapturedPaymentButNotACapturedOne() throws Exception {
+        JsonNode held = JSON.readTree(v2("POST", "/payments", Map.of("amount", 500, "currency", "usd", "source", "tok_good",
+                "capture", false), null).getBody());
+        JsonNode voided = JSON.readTree(v2("POST", "/payments/" + held.get("id").asText() + "/void", null, null).getBody());
+        assertThat(voided.get("status").asText()).isEqualTo("voided");
+
+        JsonNode captured = JSON.readTree(v2("POST", "/payments", Map.of("amount", 500, "currency", "usd", "source", "tok_good"), null).getBody());
+        var refused = v2("POST", "/payments/" + captured.get("id").asText() + "/void", null, null);
+        assertThat(refused.getStatusCode().value()).isEqualTo(409);
+        assertThat(refused.getBody()).contains("refund it instead");
+    }
+
+    @Test
+    void v2RefundsPartlyThenTheRestButNeverMore() throws Exception {
+        String id = JSON.readTree(v2("POST", "/payments", Map.of("amount", 1000, "currency", "usd", "source", "tok_good"), null)
+                .getBody()).get("id").asText();
+
+        JsonNode part = JSON.readTree(v2("POST", "/payments/" + id + "/refunds", Map.of("amount", 300), null).getBody());
+        assertThat(part.get("status").asText()).isEqualTo("succeeded");
+        assertThat(v2("POST", "/payments/" + id + "/refunds", Map.of("amount", 701), null).getBody()).contains("refund_too_large");
+        JsonNode rest = JSON.readTree(v2("POST", "/payments/" + id + "/refunds", null, null).getBody());
+        assertThat(rest.get("amount").asLong()).isEqualTo(700);
+
+        JsonNode payment = JSON.readTree(v2("GET", "/payments/" + id, null, null).getBody());
+        assertThat(payment.get("amountRefunded").asLong()).isEqualTo(1000);
+        assertThat(payment.get("refunds")).hasSize(2);
+        assertThat(v2("POST", "/payments/" + id + "/refunds", null, null).getBody()).contains("nothing_to_refund");
+    }
+
+    @Test
+    void v2SendsSignedWebhooksForEachChange() throws Exception {
+        String id = JSON.readTree(v2("POST", "/payments", Map.of("amount", 1000, "currency", "usd", "source", "tok_good"), null)
+                .getBody()).get("id").asText();
+        v2("POST", "/payments/" + id + "/refunds", Map.of("amount", 100), null);
+
+        sender.deliver();
+
+        var mine = webhooks.stream().filter(d -> d.getValue().contains(id)).toList();
+        assertThat(mine).hasSize(2);
+        for (var delivery : mine) {
+            String t = delivery.getKey().split(",")[0].substring(2);
+            String v1 = delivery.getKey().split(",")[1].substring(3);
+            assertThat(v1).isEqualTo(Webhooks.sign(webhookSecret, t + "." + delivery.getValue()));
+        }
+        assertThat(JSON.readTree(mine.get(0).getValue()).get("type").asText()).isEqualTo("payment.captured");
+        assertThat(JSON.readTree(mine.get(1).getValue()).get("type").asText()).isEqualTo("refund.succeeded");
+        assertThat(mine.get(0).getValue()).doesNotContain("2860010000000012");
+
+        int delivered = webhooks.size();
+        sender.deliver();
+        assertThat(webhooks).hasSize(delivered);   // delivered ones aren't sent again
+    }
+
+    @Test
+    void anUnknownPaymentBecomesReversedOnceTheNetworkHearsTheReversal() throws Exception {
+        JsonNode unknown = JSON.readTree(v2("POST", "/payments", Map.of("amount", 1000, "currency", "usd", "source", "tok_unknown"), null).getBody());
+        assertThat(unknown.get("status").asText()).isEqualTo("unknown");
+
+        payments.resolveUnknown();
+
+        JsonNode resolved = JSON.readTree(v2("GET", "/payments/" + unknown.get("id").asText(), null, null).getBody());
+        assertThat(resolved.get("status").asText()).isEqualTo("reversed");
+    }
+
+    @Test
+    void v1NeverCapturesAndKeepsItsPublishedStatuses() throws Exception {
+        JsonNode payment = JSON.readTree(pay("tok_good", 700, null).getBody());
+        assertThat(payment.get("status").asText()).isEqualTo("authorised");
+        assertThat(payment.has("amountCaptured")).isFalse();
+    }
+
+    private ResponseEntity<String> v2(String method, String path, Object body, String idempotencyKey) {
+        var response = http.exchange("/v2" + path, HttpMethod.valueOf(method), new HttpEntity<>(body, headers(idempotencyKey)), String.class);
+        var simple = com.atlassian.oai.validator.model.SimpleResponse.Builder.status(response.getStatusCode().value())
+                .withContentType(String.valueOf(response.getHeaders().getContentType()))
+                .withBody(response.getBody())
+                .build();
+        var report = CONTRACT_V2.validateResponse("/v2" + path, com.atlassian.oai.validator.model.Request.Method.valueOf(method), simple);
+        assertThat(report.getMessages()).as("v2 contract violations for %s %s", method, path).isEmpty();
+        return response;
     }
 
     @Test
@@ -169,6 +308,12 @@ class PaymentsApiTest {
             com.atlassian.oai.validator.OpenApiInteractionValidator.createForSpecificationUrl(
                             java.nio.file.Path.of("../contracts/gateway-v1.yaml").toUri().toString())
                     .withBasePathOverride("/v1")
+                    .build();
+
+    static final com.atlassian.oai.validator.OpenApiInteractionValidator CONTRACT_V2 =
+            com.atlassian.oai.validator.OpenApiInteractionValidator.createForSpecificationUrl(
+                            java.nio.file.Path.of("../contracts/gateway-v2.yaml").toUri().toString())
+                    .withBasePathOverride("/v2")
                     .build();
 
     private static ResponseEntity<String> checked(String method, String path, ResponseEntity<String> response) {

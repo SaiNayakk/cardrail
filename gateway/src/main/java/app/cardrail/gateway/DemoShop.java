@@ -37,9 +37,14 @@ class DemoShop implements ApplicationRunner {
         Thread.ofPlatform().name("demo-shop-signup").daemon().start(() -> {
             for (int attempt = 1; ; attempt++) {
                 try {
+                    String webhookSecret = demo.webhookSecret() == null || demo.webhookSecret().isBlank() ? null : demo.webhookSecret();
                     if (!merchants.secretKeyExists(demo.secretKey())) {
-                        merchants.create("Railpay demo shop", "5999", "San Francisco", null, demo.secretKey(), demo.publishableKey());
+                        merchants.create("Railpay demo shop", "5999", "San Francisco", demo.webhookUrl(), demo.secretKey(),
+                                demo.publishableKey(), webhookSecret);
                         log.info("Signed up the demo shop");
+                    } else if (webhookSecret != null) {
+                        // a shop signed up before webhooks existed, or whose settings changed
+                        merchants.setWebhook(demo.secretKey(), demo.webhookUrl(), webhookSecret);
                     }
                     return;
                 } catch (RuntimeException e) {

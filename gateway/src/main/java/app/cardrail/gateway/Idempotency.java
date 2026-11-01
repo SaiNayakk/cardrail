@@ -27,11 +27,16 @@ public class Idempotency {
         this.json = json;
     }
 
-    public <T> ResponseEntity<?> run(String merchantId, String key, Object request, Supplier<ResponseEntity<T>> work) {
-        if (key == null) {
+    /**
+     * @param key      the key as stored: the caller's, scoped (a v2 key never replays a v1 answer); ignored when
+     *                 {@code given} is null
+     * @param given    the Idempotency-Key header as the caller sent it, or null for no idempotency
+     */
+    public <T> ResponseEntity<?> run(String merchantId, String key, String given, Object request, Supplier<ResponseEntity<T>> work) {
+        if (given == null) {
             return work.get();
         }
-        if (key.isBlank() || key.length() > 255) {
+        if (given.isBlank() || given.length() > 255) {
             throw ApiException.invalid("invalid_idempotency_key", "an Idempotency-Key is 1 to 255 characters");
         }
         byte[] hash = Keys.sha256(write(request));
