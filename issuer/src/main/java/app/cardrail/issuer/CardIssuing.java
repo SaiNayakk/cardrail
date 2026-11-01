@@ -20,11 +20,13 @@ public class CardIssuing {
 
     private final IssuerStore store;
     private final CardKeys keys;
+    private final IssuerBooks books;
     private final Clock clock;
 
-    public CardIssuing(IssuerStore store, CardKeys keys, Clock clock) {
+    public CardIssuing(IssuerStore store, CardKeys keys, IssuerBooks books, Clock clock) {
         this.store = store;
         this.keys = keys;
+        this.books = books;
         this.clock = clock;
     }
 
@@ -48,6 +50,7 @@ public class CardIssuing {
                            String pan, String expiry, String status, String label) {
         UUID cardholder = store.createCardholder(name);
         UUID account = store.createAccount(cardholder, kind, balanceCents, creditLimitCents);
+        books.open(account, kind, balanceCents);
         UUID card = store.createCard(account, keys.panHash(pan), keys.encrypt(pan), pan, expiry, status, label);
         return new IssuedCard(cardholder, account, card, pan, expiry, keys.cvv2(pan, expiry));
     }
