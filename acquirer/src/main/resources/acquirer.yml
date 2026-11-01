@@ -34,6 +34,10 @@ acquirer:
   network-timeout: ${ACQUIRER_NETWORK_TIMEOUT:5s}
   trace-url: ${TRACE_URL:}
   internal-key: ${CARDRAIL_INTERNAL_KEY:}
+  network-url: ${ACQUIRER_NETWORK_URL:http://127.0.0.1:8204}
+  gateway-url: ${ACQUIRER_GATEWAY_URL:http://127.0.0.1:8201}
+  # how often captured payments are presented to Railnet, and settlement reports and chargebacks collected
+  clearing-every: ${ACQUIRER_CLEARING_EVERY:2m}
 
 cardrail:
   internal-key: ${CARDRAIL_INTERNAL_KEY:}
