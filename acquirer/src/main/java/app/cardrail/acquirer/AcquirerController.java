@@ -70,8 +70,12 @@ class AcquirerController {
     Authorising.Result authorise(@Valid @RequestBody AuthoriseRequest r) {
         var result = authorising.authorise(new Authorising.Request(r.mid(), r.tid(), r.pan(), r.expiry(), r.cvv2(),
                 r.amountCents(), r.currency(), r.rrn()));
-        trace.note(r.rrn(), Parties.ACQUIRER, Parties.GATEWAY, result.status().charAt(0) + result.status().substring(1).toLowerCase()
-                + (result.responseCode() == null ? "" : ": " + result.responseText()), Map.of("status", result.status()));
+        String summary = switch (result.status()) {
+            case "APPROVED" -> "Approved, code " + result.authCode();
+            case "DECLINED" -> "Declined: " + result.responseText();
+            default -> "Outcome unknown: " + result.responseText();
+        };
+        trace.note(r.rrn(), Parties.ACQUIRER, Parties.GATEWAY, summary, Map.of("status", result.status()));
         return result;
     }
 }
