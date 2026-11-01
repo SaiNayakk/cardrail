@@ -1,0 +1,52 @@
+# Railpay's card vault. Named vault.yml (not application.yml) so services can share one JVM host.
+spring:
+  application:
+    name: vault
+  datasource:
+    url: ${VAULT_DB_URL:jdbc:postgresql://localhost:5432/cardrail?currentSchema=vault}
+    username: ${VAULT_DB_USER:cardrail}
+    password: ${VAULT_DB_PASSWORD:cardrail}
+    hikari:
+      maximum-pool-size: 4
+      pool-name: vault
+      connection-timeout: 2000
+  flyway:
+    locations: classpath:db/vault
+    schemas: vault
+    default-schema: vault
+  jackson:
+    default-property-inclusion: non_null
+  jmx:
+    enabled: false
+
+server:
+  port: ${VAULT_PORT:8202}
+  address: ${VAULT_BIND:127.0.0.1}
+  tomcat:
+    threads:
+      max: 16
+
+vault:
+  key: ${VAULT_KEY:}
+  gateway-url: ${VAULT_GATEWAY_URL:http://127.0.0.1:8201}
+  internal-key: ${CARDRAIL_INTERNAL_KEY:}
+
+cardrail:
+  internal-key: ${CARDRAIL_INTERNAL_KEY:}
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,prometheus
+  endpoint:
+    health:
+      probes:
+        enabled: true
+
+logging:
+  structured:
+    format:
+      console: ${LOG_FORMAT:}
+  pattern:
+    correlation: "[%X{requestId:-}] "

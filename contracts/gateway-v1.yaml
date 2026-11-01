@@ -1,0 +1,152 @@
+openapi: 3.1.0
+info:
+  title: Railpay merchant API
+  version: 1.0.0
+  description: |
+    How a merchant's server takes card payments. Authenticate with your secret key:
+    `Authorization: Bearer sk_test_...`. Card details never reach your server: the hosted card form gives your
+    page a token (`tok_...`), which you pass as `source`.
+
+    Writes accept an `Idempotency-Key` header. A request repeated with the same key and body gets the first
+    answer, with `Idempotent-Replayed: true`, and is never done twice.
+
+    Errors are RFC 9457 problems with a stable `code`.
+servers:
+  - url: https://cards-saiworks.nncs.in/api/railpay
+paths:
+  /payments:
+    post:
+      operationId: createPayment
+      summary: Authorise a card payment
+      parameters:
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreatePayment'
+      responses:
+        '201':
+          description: |
+            The payment, authorised or declined (a decline is a payment with its reason), or unknown when the
+            network didn't answer in time.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Payment'
+        '401': { $ref: '#/components/responses/Problem' }
+        '409': { $ref: '#/components/responses/Problem' }
+        '422': { $ref: '#/components/responses/Problem' }
+        '503': { $ref: '#/components/responses/Problem' }
+    get:
+      operationId: listPayments
+      summary: Your most recent payments, newest first
+      parameters:
+        - name: limit
+          in: query
+          schema: { type: integer, minimum: 1, maximum: 100, default: 20 }
+      responses:
+        '200':
+          description: A page of payments
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [object, data]
+                properties:
+                  object: { const: list }
+                  data:
+                    type: array
+                    items: { $ref: '#/components/schemas/Payment' }
+        '401': { $ref: '#/components/responses/Problem' }
+  /payments/{id}:
+    get:
+      operationId: getPayment
+      summary: One payment
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema: { type: string, pattern: '^pay_' }
+      responses:
+        '200':
+          description: The payment
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Payment'
+        '401': { $ref: '#/components/responses/Problem' }
+        '404': { $ref: '#/components/responses/Problem' }
+components:
+  parameters:
+    IdempotencyKey:
+      name: Idempotency-Key
+      in: header
+      required: false
+      schema: { type: string, minLength: 1, maxLength: 255 }
+  responses:
+    Problem:
+      description: An RFC 9457 problem
+      content:
+        application/problem+json:
+          schema:
+            $ref: '#/components/schemas/Problem'
+  schemas:
+    CreatePayment:
+      type: object
+      additionalProperties: false
+      required: [amount, currency, source]
+      properties:
+        amount:
+          type: integer
+          minimum: 1
+          maximum: 99999999
+          description: In the smallest unit of the currency (cents)
+        currency:
+          type: string
+          enum: [usd]
+        source:
+          type: string
+          pattern: '^tok_'
+          description: A card token from the hosted card form. Usable once.
+        description:
+          type: string
+          maxLength: 200
+    Payment:
+      type: object
+      required: [id, object, amount, currency, status, card, reference, createdAt]
+      properties:
+        id: { type: string, pattern: '^pay_' }
+        object: { const: payment }
+        amount: { type: integer }
+        currency: { type: string }
+        status:
+          type: string
+          enum: [pending, authorised, declined, unknown, failed]
+        card:
+          type: object
+          required: [brand, last4]
+          properties:
+            brand: { type: string }
+            last4: { type: string, pattern: '^[0-9]{4}$' }
+        reference:
+          type: string
+          pattern: '^[A-Za-z0-9]{12}$'
+          description: The retrieval reference number every party knows this payment by (ISO 8583 field 37)
+        authCode: { type: string, description: The issuer's approval code }
+        responseCode: { type: string, description: The ISO 8583 response code (field 39) }
+        declineReason: { type: string }
+        description: { type: string }
+        createdAt: { type: string, format: date-time }
+    Problem:
+      type: object
+      required: [status, code, detail]
+      properties:
+        type: { type: string }
+        title: { type: string }
+        status: { type: integer }
+        code: { type: string }
+        detail: { type: string }
+        instance: { type: string }
+        requestId: { type: string }

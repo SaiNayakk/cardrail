@@ -1,0 +1,60 @@
+# Railpay, the gateway. Named gateway.yml (not application.yml) so services can share one JVM host.
+spring:
+  application:
+    name: gateway
+  datasource:
+    url: ${GATEWAY_DB_URL:jdbc:postgresql://localhost:5432/cardrail?currentSchema=gateway}
+    username: ${GATEWAY_DB_USER:cardrail}
+    password: ${GATEWAY_DB_PASSWORD:cardrail}
+    hikari:
+      maximum-pool-size: 5
+      pool-name: gateway
+      connection-timeout: 2000
+  flyway:
+    locations: classpath:db/gateway
+    schemas: gateway
+    default-schema: gateway
+  jackson:
+    default-property-inclusion: non_null
+  jmx:
+    enabled: false
+
+server:
+  port: ${GATEWAY_PORT:8201}
+  address: ${GATEWAY_BIND:127.0.0.1}
+  tomcat:
+    threads:
+      max: 32
+
+gateway:
+  vault-url: ${GATEWAY_VAULT_URL:http://127.0.0.1:8202}
+  acquirer-url: ${GATEWAY_ACQUIRER_URL:http://127.0.0.1:8203}
+  # Longer than the acquirer waits for the network (5 s), so its answer always comes first.
+  acquirer-timeout: ${GATEWAY_ACQUIRER_TIMEOUT:8s}
+  key-mode: ${GATEWAY_KEY_MODE:test}
+  trace-url: ${TRACE_URL:}
+  internal-key: ${CARDRAIL_INTERNAL_KEY:}
+  demo:
+    enabled: ${CARDRAIL_DEMO:false}
+    secret-key: ${DEMOSHOP_SECRET_KEY:}
+    publishable-key: ${DEMOSHOP_PUBLISHABLE_KEY:}
+
+cardrail:
+  internal-key: ${CARDRAIL_INTERNAL_KEY:}
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,prometheus
+  endpoint:
+    health:
+      probes:
+        enabled: true
+
+logging:
+  structured:
+    format:
+      console: ${LOG_FORMAT:}
+  pattern:
+    correlation: "[%X{requestId:-}] "

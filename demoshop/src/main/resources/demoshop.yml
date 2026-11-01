@@ -1,0 +1,40 @@
+# The demo shop. Named demoshop.yml (not application.yml) so services can share one JVM host.
+spring:
+  application:
+    name: demoshop
+  jackson:
+    default-property-inclusion: non_null
+  jmx:
+    enabled: false
+
+server:
+  port: ${DEMOSHOP_PORT:8207}
+  address: ${DEMOSHOP_BIND:127.0.0.1}
+  tomcat:
+    threads:
+      max: 16
+
+demoshop:
+  # The shop calls Railpay's public API, as any merchant would.
+  gateway-url: ${DEMOSHOP_GATEWAY_URL:http://127.0.0.1:8201}
+  secret-key: ${DEMOSHOP_SECRET_KEY:}
+  publishable-key: ${DEMOSHOP_PUBLISHABLE_KEY:}
+
+cardrail:
+  # The shop has no internal endpoints, but the shared filter wants a key.
+  internal-key: ${CARDRAIL_INTERNAL_KEY:}
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,prometheus
+  endpoint:
+    health:
+      probes:
+        enabled: true
+
+logging:
+  structured:
+    format:
+      console: ${LOG_FORMAT:}

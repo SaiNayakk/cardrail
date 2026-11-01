@@ -26,5 +26,15 @@
 
   <modules>
     <module>iso8583</module>
+    <module>common</module>
+    <module>issuer</module>
+    <module>network</module>
+    <module>acquirer</module>
+    <module>vault</module>
+    <module>gateway</module>
+    <module>trace</module>
+    <module>demoshop</module>
+    <module>host</module>
+    <module>e2e</module>
   </modules>
 </project>

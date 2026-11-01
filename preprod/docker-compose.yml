@@ -1,0 +1,118 @@
+# Pre-prod: an environment created fresh for every release, tested end to end, then destroyed.
+# It mirrors the phone: the same host jar, JVM flags, memory budget and Postgres major version.
+#
+#   ./preprod/run.sh        build, create, test, record evidence, destroy
+#
+# Every secret below is a throwaway value for this disposable environment only.
+name: cardrail-preprod
+
+x-host: &host
+  build:
+    context: ..
+    dockerfile: preprod/Dockerfile.host
+  depends_on:
+    postgres:
+      condition: service_healthy
+  restart: on-failure
+
+x-env: &env
+  CARDRAIL_DEMO: "true"
+  CARDRAIL_INTERNAL_KEY: preprod-only-internal-key-not-a-secret
+  TRACE_URL: http://network:8206
+  LOG_FORMAT: ecs
+
+services:
+  postgres:
+    image: postgres:18-alpine          # the phone runs PostgreSQL 18
+    environment:
+      POSTGRES_DB: cardrail
+      POSTGRES_USER: cardrail
+      POSTGRES_PASSWORD: preprod-only-not-a-secret
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U cardrail -d cardrail"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+    mem_limit: 192m
+
+  issuing:
+    <<: *host
+    command: ["issuing"]
+    environment:
+      <<: *env
+      XMX: 80m
+      ISSUER_DB_URL: jdbc:postgresql://postgres:5432/cardrail?currentSchema=issuer
+      ISSUER_DB_PASSWORD: preprod-only-not-a-secret
+      ISSUER_BIND: 0.0.0.0
+      ISSUER_ISO_BIND: 0.0.0.0
+      ISSUER_PAN_KEY: cHJlcHJvZC1vbmx5LWlzc3Vlci1wYW4ta2V5LTAwMDE=
+      ISSUER_HASH_KEY: cHJlcHJvZC1vbmx5LWlzc3Vlci1oYXNoLWtleS0wMDI=
+      ISSUER_CVK: cHJlcHJvZC1vbmx5LWlzc3Vlci1jdmsta2V5LTAwMDM=
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:8205/actuator/health/readiness | grep -q UP"]
+      interval: 3s
+      timeout: 3s
+      retries: 60
+    mem_limit: 224m
+
+  network:
+    <<: *host
+    command: ["network"]
+    environment:
+      <<: *env
+      XMX: 96m
+      NETWORK_DB_URL: jdbc:postgresql://postgres:5432/cardrail?currentSchema=network
+      NETWORK_DB_PASSWORD: preprod-only-not-a-secret
+      TRACE_DB_URL: jdbc:postgresql://postgres:5432/cardrail?currentSchema=trace
+      TRACE_DB_PASSWORD: preprod-only-not-a-secret
+      NETWORK_BIND: 0.0.0.0
+      NETWORK_ISO_BIND: 0.0.0.0
+      TRACE_BIND: 0.0.0.0
+      NETWORK_KESTREL_HOST: issuing
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:8204/actuator/health/readiness | grep -q UP && wget -qO- http://127.0.0.1:8206/actuator/health/readiness | grep -q UP"]
+      interval: 3s
+      timeout: 3s
+      retries: 60
+    mem_limit: 256m
+
+  acquiring:
+    <<: *host
+    command: ["acquiring"]
+    environment:
+      <<: *env
+      XMX: 128m
+      ACQUIRER_DB_URL: jdbc:postgresql://postgres:5432/cardrail?currentSchema=acquirer
+      ACQUIRER_DB_PASSWORD: preprod-only-not-a-secret
+      VAULT_DB_URL: jdbc:postgresql://postgres:5432/cardrail?currentSchema=vault
+      VAULT_DB_PASSWORD: preprod-only-not-a-secret
+      GATEWAY_DB_URL: jdbc:postgresql://postgres:5432/cardrail?currentSchema=gateway
+      GATEWAY_DB_PASSWORD: preprod-only-not-a-secret
+      ACQUIRER_BIND: 0.0.0.0
+      VAULT_BIND: 0.0.0.0
+      GATEWAY_BIND: 0.0.0.0
+      DEMOSHOP_BIND: 0.0.0.0
+      ACQUIRER_NETWORK_HOST: network
+      VAULT_KEY: cHJlcHJvZC1vbmx5LXZhdWx0LWtleS0wMDAwMDAwMDQ=
+      DEMOSHOP_SECRET_KEY: sk_test_preprodOnlyDemoShopSecretKey0001
+      DEMOSHOP_PUBLISHABLE_KEY: pk_test_preprodOnlyDemoShop01
+    healthcheck:
+      test: ["CMD-SHELL", "for p in 8201 8202 8203 8207; do wget -qO- http://127.0.0.1:$$p/actuator/health/readiness | grep -q UP || exit 1; done"]
+      interval: 3s
+      timeout: 5s
+      retries: 60
+    mem_limit: 320m
+
+  web:
+    build:
+      context: ../web
+    depends_on:
+      acquiring:
+        condition: service_healthy
+      network:
+        condition: service_healthy
+      issuing:
+        condition: service_healthy
+    ports:
+      - "127.0.0.1:${CARDRAIL_WEB_PORT:-8280}:80"
+    mem_limit: 64m

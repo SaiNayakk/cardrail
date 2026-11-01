@@ -1,0 +1,50 @@
+# The live trace. Named trace.yml (not application.yml) so services can share one JVM host.
+spring:
+  application:
+    name: trace
+  datasource:
+    url: ${TRACE_DB_URL:jdbc:postgresql://localhost:5432/cardrail?currentSchema=trace}
+    username: ${TRACE_DB_USER:cardrail}
+    password: ${TRACE_DB_PASSWORD:cardrail}
+    hikari:
+      maximum-pool-size: 4
+      pool-name: trace
+      connection-timeout: 2000
+  flyway:
+    locations: classpath:db/trace
+    schemas: trace
+    default-schema: trace
+  jackson:
+    default-property-inclusion: non_null
+  jmx:
+    enabled: false
+
+server:
+  port: ${TRACE_PORT:8206}
+  address: ${TRACE_BIND:127.0.0.1}
+  tomcat:
+    threads:
+      max: 16
+
+trace:
+  retention: ${TRACE_RETENTION:7d}
+
+cardrail:
+  internal-key: ${CARDRAIL_INTERNAL_KEY:}
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,prometheus
+  endpoint:
+    health:
+      probes:
+        enabled: true
+
+logging:
+  structured:
+    format:
+      console: ${LOG_FORMAT:}
+  pattern:
+    correlation: "[%X{requestId:-}] "

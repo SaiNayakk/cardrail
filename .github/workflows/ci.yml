@@ -21,21 +21,51 @@ jobs:
         id: filter
         with:
           filters: |
-            iso8583:
-              - 'iso8583/**'
+            shared: &shared
               - 'pom.xml'
               - '.mvn/**'
               - '.github/workflows/ci.yml'
+            iso8583:
+              - *shared
+              - 'iso8583/**'
+            common: &common
+              - *shared
+              - 'iso8583/**'
+              - 'common/**'
+            issuer:
+              - *common
+              - 'issuer/**'
+            network:
+              - *common
+              - 'network/**'
+            acquirer:
+              - *common
+              - 'acquirer/**'
+            vault:
+              - *common
+              - 'vault/**'
+            gateway:
+              - *common
+              - 'gateway/**'
+              - 'contracts/**'
+            trace:
+              - *common
+              - 'trace/**'
+            demoshop:
+              - *common
+              - 'demoshop/**'
 
   build:
     needs: changes
-    if: needs.changes.outputs.modules != '[]'
+    if: needs.changes.outputs.modules != '[]' && needs.changes.outputs.modules != '["shared"]'
     runs-on: ubuntu-latest
     timeout-minutes: 20
     strategy:
       fail-fast: false
       matrix:
         module: ${{ fromJSON(needs.changes.outputs.modules) }}
+        exclude:
+          - module: shared
     name: build (${{ matrix.module }})
     steps:
       - uses: actions/checkout@v4
@@ -44,7 +74,7 @@ jobs:
           distribution: temurin
           java-version: '21'
           cache: maven
-      - name: Build and test the module and what it depends on
+      - name: Build and test the module and what it depends on (real Postgres where it has a database)
         run: ./mvnw -B -pl ${{ matrix.module }} -am verify
       - name: Upload test reports
         if: always()
@@ -54,13 +84,90 @@ jobs:
           path: '**/target/surefire-reports/'
           retention-days: 14
 
-  # One required check for branch protection, whichever modules ran.
+  # Versioned contracts: a change that would break a client fails here. Breaking it on purpose means a new
+  # major version (a new file), never an edit.
+  contracts:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: No breaking changes against main
+        run: |
+          base=$(git merge-base HEAD origin/main 2>/dev/null || echo "")
+          for spec in contracts/*.yaml; do
+            if [ -n "$base" ] && git cat-file -e "$base:$spec" 2>/dev/null; then
+              git show "$base:$spec" > /tmp/base.yaml
+              docker run --rm -v /tmp:/base -v "$PWD/contracts:/head" tufin/oasdiff:v1.34.1                 breaking /base/base.yaml "/head/$(basename "$spec")" --fail-on ERR
+            else
+              echo "$spec is new"
+            fi
+          done
+
+  web:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: web
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+      - run: npm ci --no-audit --no-fund
+      - run: npx ng test --watch=false
+      - run: npx ng build --configuration production
+
+  # Pre-prod: the whole system built from this commit, started from nothing, tested end to end through its
+  # public edge, then destroyed (docs/environments.md).
+  preprod:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+          cache: maven
+      - name: Build the host jar
+        run: ./mvnw -B -q -DskipTests install
+      - name: Create pre-prod
+        run: docker compose -f preprod/docker-compose.yml up -d --build --wait --wait-timeout 300
+      - name: End-to-end tests
+        run: ./mvnw -B -pl e2e test -De2e.baseUrl=http://127.0.0.1:8280
+      - name: Memory each host used
+        if: always()
+        run: docker stats --no-stream --format '{{.Name}} {{.MemUsage}}' | tee preprod-memory.txt
+      - name: Logs
+        if: always()
+        run: docker compose -f preprod/docker-compose.yml logs --no-color > preprod-logs.txt 2>&1 || true
+      - name: Upload evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: preprod-evidence
+          path: |
+            preprod-memory.txt
+            preprod-logs.txt
+            e2e/target/e2e-reports/
+          retention-days: 14
+      - name: Destroy pre-prod
+        if: always()
+        run: docker compose -f preprod/docker-compose.yml down -v
+
+  # One required check for branch protection, whichever jobs ran.
   ci:
-    needs: [changes, build]
+    needs: [changes, build, contracts, web, preprod]
     if: always()
     runs-on: ubuntu-latest
     steps:
       - run: |
-          if [ "${{ needs.build.result }}" = "failure" ] || [ "${{ needs.build.result }}" = "cancelled" ]; then
-            exit 1
-          fi
+          for result in "${{ needs.build.result }}" "${{ needs.contracts.result }}" "${{ needs.web.result }}" "${{ needs.preprod.result }}"; do
+            if [ "$result" = "failure" ] || [ "$result" = "cancelled" ]; then
+              exit 1
+            fi
+          done

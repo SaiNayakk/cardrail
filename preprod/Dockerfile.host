@@ -1,0 +1,10 @@
+# One image for every host; which group of services it runs is the first argument (acquiring, network, issuing, cell).
+# The jar is built by Maven before this (CI and run.sh do), so the image holds exactly what was tested.
+FROM eclipse-temurin:21-jre-alpine
+RUN addgroup -S cardrail && adduser -S cardrail -G cardrail
+WORKDIR /app
+COPY host/target/cardrail-host.jar /app/cardrail-host.jar
+USER cardrail
+# The phone's JVM settings (Sprout's capacity work): serial GC, small heaps, C1 only. XMX is per host.
+ENV XMX=128m
+ENTRYPOINT ["sh", "-c", "exec java -XX:+UseSerialGC -Xms16m -Xmx${XMX} -XX:MinHeapFreeRatio=10 -XX:MaxHeapFreeRatio=25 -Xss512k -XX:MaxMetaspaceSize=160m -XX:ReservedCodeCacheSize=32m -XX:TieredStopAtLevel=1 -XX:CICompilerCount=1 -jar /app/cardrail-host.jar \"$@\"", "host"]
