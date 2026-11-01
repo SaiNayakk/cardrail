@@ -109,6 +109,68 @@ class AuthoriserTest {
     }
 
     @Test
+    void aReversalReleasesTheHold() throws Exception {
+        var card = issuing.open("Reversal test", "DEBIT", 1_000, null);
+        IsoMessage purchase = request(card.pan(), card.expiry(), card.cvv2(), 600);
+        assertThat(send(purchase).get(39)).isEqualTo("00");
+        assertThat(send(request(card.pan(), card.expiry(), card.cvv2(), 600)).get(39)).isEqualTo("51");
+
+        IsoMessage reversed = send(reversal("0400", purchase, null));
+
+        assertThat(reversed.mti()).isEqualTo("0410");
+        assertThat(reversed.get(39)).isEqualTo("00");
+        assertThat(send(request(card.pan(), card.expiry(), card.cvv2(), 600)).get(39)).isEqualTo("00");
+    }
+
+    @Test
+    void aPartialReversalKeepsHoldingTheNewAmount() throws Exception {
+        var card = issuing.open("Partial test", "DEBIT", 1_000, null);
+        IsoMessage purchase = request(card.pan(), card.expiry(), card.cvv2(), 1_000);
+        send(purchase);
+
+        send(reversal("0400", purchase, 400L));
+
+        assertThat(send(request(card.pan(), card.expiry(), card.cvv2(), 601)).get(39)).isEqualTo("51");
+        assertThat(send(request(card.pan(), card.expiry(), card.cvv2(), 600)).get(39)).isEqualTo("00");
+    }
+
+    @Test
+    void anOriginalThatArrivesAfterItsReversalIsDeclined() throws Exception {
+        IsoMessage late = request(APPROVE, "3012", cvv(APPROVE, "3012"), 100);
+
+        IsoMessage ack = send(reversal("0420", late, null));
+        IsoMessage original = send(late);
+
+        assertThat(ack.mti()).isEqualTo("0430");
+        assertThat(ack.get(39)).isEqualTo("00");
+        assertThat(original.get(39)).isEqualTo("25");
+    }
+
+    @Test
+    void anAdviceIsHeldWhateverTheBalance() throws Exception {
+        var card = issuing.open("Advice test", "DEBIT", 500, null);
+        IsoMessage advice = copyAs("0120", request(card.pan(), card.expiry(), null, 2_000)).set(39, "00").set(38, "SNDIN1");
+
+        IsoMessage ack = send(advice);
+
+        assertThat(ack.mti()).isEqualTo("0130");
+        assertThat(send(request(card.pan(), card.expiry(), card.cvv2(), 1)).get(39)).isEqualTo("51");
+        assertThat(send(advice).get(39)).isEqualTo("00");
+    }
+
+    @Test
+    void refundsAreApprovedWithoutAHold() throws Exception {
+        var card = issuing.open("Refund test", "DEBIT", 100, null);
+        IsoMessage refund = request(card.pan(), card.expiry(), null, 5_000).set(3, "200000");
+
+        IsoMessage response = send(refund);
+
+        assertThat(response.get(39)).isEqualTo("00");
+        assertThat(response.get(38)).hasSize(6);
+        assertThat(send(request(card.pan(), card.expiry(), card.cvv2(), 100)).get(39)).isEqualTo("00");
+    }
+
+    @Test
     void answersNetworkManagement() throws Exception {
         IsoMessage echo = new IsoMessage("0800").set(7, "1102093015").set(11, stan()).set(37, "ECHO00000001").set(70, "301");
         IsoMessage response = send(echo);
@@ -130,12 +192,26 @@ class AuthoriserTest {
 
     private static IsoMessage request(String pan, String expiry, String cvv2, long cents) {
         String stan = stan();
-        return new IsoMessage("0100")
+        IsoMessage m = new IsoMessage("0100")
                 .set(2, pan).set(3, "000000").set(4, String.format("%012d", cents)).set(7, "1102093015")
                 .set(11, stan).set(14, expiry).set(18, "5999").set(22, "810").set(32, "400101")
                 .set(37, "T" + String.format("%011d", Integer.parseInt(stan)))
-                .set(41, "WEB00001").set(42, "MERCHANT0000001").set(48, Subelements.encode(Map.of(Subelements.CVV2, cvv2)))
-                .set(49, "840");
+                .set(41, "WEB00001").set(42, "MERCHANT0000001").set(49, "840");
+        return cvv2 == null ? m : m.set(48, Subelements.encode(Map.of(Subelements.CVV2, cvv2)));
+    }
+
+    /** A reversal of {@code original}: all of it, or down to {@code remaining} cents. Its own trace number, the same RRN. */
+    private static IsoMessage reversal(String mti, IsoMessage original, Long remaining) {
+        IsoMessage r = new IsoMessage(mti).set(2, original.get(2)).set(3, original.get(3)).set(4, original.get(4))
+                .set(7, "1102093020").set(11, stan()).set(32, original.get(32)).set(37, original.get(37)).set(49, "840")
+                .set(90, original.mti() + original.get(11) + original.get(7) + String.format("%011d", 400101) + "0".repeat(11));
+        return remaining == null ? r : r.set(95, String.format("%012d", remaining) + " ".repeat(30));
+    }
+
+    private static IsoMessage copyAs(String mti, IsoMessage m) {
+        IsoMessage copy = new IsoMessage(mti);
+        m.fields().forEach(copy::set);
+        return copy;
     }
 
     private static String stan() {

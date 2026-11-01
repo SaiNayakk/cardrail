@@ -32,10 +32,16 @@ network:
   iso-port: ${NETWORK_ISO_PORT:9204}
   # How long the network waits for an issuer before answering for it. The acquirer waits longer than this.
   issuer-timeout: ${NETWORK_ISSUER_TIMEOUT:3s}
+  echo-every: ${NETWORK_ECHO_EVERY:5s}
+  key: ${NETWORK_KEY:}
   issuers:
     "286001":
       host: ${NETWORK_KESTREL_HOST:127.0.0.1}
       port: ${NETWORK_KESTREL_PORT:9205}
+      # What Kestrel Bank lets Railnet approve for it when it can't answer
+      stand-in-max-cents: 10000
+      stand-in-daily-count: 3
+      stand-in-daily-cents: 20000
   trace-url: ${TRACE_URL:}
   internal-key: ${CARDRAIL_INTERNAL_KEY:}
 

@@ -40,6 +40,7 @@ class AcquirerEndpoint implements SmartLifecycle {
         String acquirer = Parties.acquirer(request.get(32));
         return switch (request.mti()) {
             case "0100" -> network.authorise(request, acquirer);
+            case "0400", "0420" -> network.reverse(request, acquirer);
             case "0800" -> {
                 IsoMessage response = request.response(APPROVED);
                 trace.iso(request.get(37), Parties.RAILNET, acquirer, response);

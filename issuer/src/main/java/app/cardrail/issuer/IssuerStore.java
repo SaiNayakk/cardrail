@@ -21,7 +21,8 @@ public class IssuerStore {
         }
     }
 
-    public record Authorisation(UUID id, String responseCode, String authCode, long amountCents, String status) {}
+    public record Authorisation(UUID id, UUID accountId, String kind, String responseCode, String authCode, long amountCents,
+                                long holdCents, String status) {}
 
     private final JdbcClient jdbc;
 
@@ -82,27 +83,54 @@ public class IssuerStore {
                 .param(accountId).query(Long.class).single();
     }
 
-    public Optional<Authorisation> authorisation(String acquirerId, String rrn, String stan) {
+    public Optional<Authorisation> authorisation(String acquirerId, String rrn) {
         return jdbc.sql("""
-                select id, response_code, auth_code, amount_cents, status from authorisations
-                where acquirer_id = ? and rrn = ? and stan = ?""")
-                .params(acquirerId, rrn, stan).query(Authorisation.class).optional();
+                select id, account_id, kind, response_code, auth_code, amount_cents, hold_cents, status from authorisations
+                where acquirer_id = ? and rrn = ?""")
+                .params(acquirerId, rrn).query(Authorisation.class).optional();
+    }
+
+    /** Locked until the transaction ends, so a reversal and a clearing can't both change it. */
+    public Optional<Authorisation> lockAuthorisation(String acquirerId, String rrn) {
+        return jdbc.sql("""
+                select id, account_id, kind, response_code, auth_code, amount_cents, hold_cents, status from authorisations
+                where acquirer_id = ? and rrn = ? for update""")
+                .params(acquirerId, rrn).query(Authorisation.class).optional();
+    }
+
+    /** A decline the network overrode while standing in for us: approved and held after all. */
+    public void honourStandIn(UUID id, long amountCents, String authCode) {
+        jdbc.sql("""
+                update authorisations set status = 'APPROVED', response_code = '00', auth_code = ?, decided_by = 'STAND_IN',
+                                          amount_cents = ?, hold_cents = ?
+                where id = ?""")
+                .params(authCode, amountCents, amountCents, id).update();
+    }
+
+    /** What is still held after a reversal: nothing for a full one, the new amount for a partial one. */
+    public void reverse(UUID id, long remainingCents) {
+        jdbc.sql("""
+                update authorisations
+                set hold_cents = ?, amount_cents = ?, status = case when ? = 0 then 'REVERSED' else status end,
+                    reversed_at = now()
+                where id = ?""")
+                .params(remainingCents, remainingCents, remainingCents, id).update();
     }
 
     public record NewAuthorisation(UUID cardId, UUID accountId, String acquirerId, String rrn, String stan, String mti,
-                                   long amountCents, String currency, String mcc, String merchant,
-                                   String responseCode, String authCode, String status, long holdCents) {}
+                                   String kind, long amountCents, String currency, String mcc, String merchant,
+                                   String responseCode, String authCode, String decidedBy, String status, long holdCents) {}
 
     /** Records the decision; false if the same request was recorded meanwhile (its first answer stands). */
     public boolean record(NewAuthorisation a) {
         return jdbc.sql("""
-                insert into authorisations (id, card_id, account_id, acquirer_id, rrn, stan, mti, amount_cents, currency,
-                                            mcc, merchant, response_code, auth_code, status, hold_cents)
-                values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                on conflict (acquirer_id, rrn, stan) do nothing""")
-                .params(UUID.randomUUID(), a.cardId(), a.accountId(), a.acquirerId(), a.rrn(), a.stan(), a.mti(),
-                        a.amountCents(), a.currency(), a.mcc(), a.merchant(), a.responseCode(), a.authCode(), a.status(),
-                        a.holdCents())
+                insert into authorisations (id, card_id, account_id, acquirer_id, rrn, stan, mti, kind, amount_cents, currency,
+                                            mcc, merchant, response_code, auth_code, decided_by, status, hold_cents)
+                values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                on conflict (acquirer_id, rrn) do nothing""")
+                .params(UUID.randomUUID(), a.cardId(), a.accountId(), a.acquirerId(), a.rrn(), a.stan(), a.mti(), a.kind(),
+                        a.amountCents(), a.currency(), a.mcc(), a.merchant(), a.responseCode(), a.authCode(), a.decidedBy(),
+                        a.status(), a.holdCents())
                 .update() == 1;
     }
 }
