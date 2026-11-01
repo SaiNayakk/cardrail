@@ -5,7 +5,7 @@ import java.util.TreeMap;
 
 /**
  * What a message looks like in a log or the live trace. Card numbers keep their BIN and last four (as on a
- * receipt, PCI DSS 3.4); expiry dates, track data, PINs, chip data and MACs are never shown.
+ * receipt, PCI DSS 3.4); expiry dates, track data, card security codes, PINs, chip data and MACs are never shown.
  */
 public final class Masking {
 
@@ -26,9 +26,20 @@ public final class Masking {
                 int separator = Math.max(value.indexOf('='), value.indexOf('D'));
                 yield (separator < 0 ? pan(value) : pan(value.substring(0, separator))) + " [rest of track hidden]";
             }
+            case 48 -> field48(value);
             case 52, 55, 128 -> "[" + value.length() / 2 + " bytes hidden]";
             default -> value;
         };
+    }
+
+    private static String field48(String value) {
+        try {
+            var subelements = Subelements.decode(value);
+            subelements.replaceAll((tag, v) -> tag.equals(Subelements.CVV2) ? "***" : v);
+            return Subelements.encode(subelements);
+        } catch (Iso8583Exception e) {
+            return "[" + value.length() + " characters hidden: not readable as subelements]";
+        }
     }
 
     public static String pan(String pan) {

@@ -1,0 +1,60 @@
+# Railnet, the card network. Named network.yml (not application.yml) so services can share one JVM host.
+spring:
+  application:
+    name: network
+  datasource:
+    url: ${NETWORK_DB_URL:jdbc:postgresql://localhost:5432/cardrail?currentSchema=network}
+    username: ${NETWORK_DB_USER:cardrail}
+    password: ${NETWORK_DB_PASSWORD:cardrail}
+    hikari:
+      maximum-pool-size: 5
+      pool-name: network
+      connection-timeout: 2000
+  flyway:
+    locations: classpath:db/network
+    schemas: network
+    default-schema: network
+  jackson:
+    default-property-inclusion: non_null
+  jmx:
+    enabled: false
+
+server:
+  port: ${NETWORK_PORT:8204}
+  address: ${NETWORK_BIND:127.0.0.1}
+  tomcat:
+    threads:
+      max: 16
+
+network:
+  institution-id: "900001"
+  iso-bind: ${NETWORK_ISO_BIND:127.0.0.1}
+  iso-port: ${NETWORK_ISO_PORT:9204}
+  # How long the network waits for an issuer before answering for it. The acquirer waits longer than this.
+  issuer-timeout: ${NETWORK_ISSUER_TIMEOUT:3s}
+  issuers:
+    "286001":
+      host: ${NETWORK_KESTREL_HOST:127.0.0.1}
+      port: ${NETWORK_KESTREL_PORT:9205}
+  trace-url: ${TRACE_URL:}
+  internal-key: ${CARDRAIL_INTERNAL_KEY:}
+
+cardrail:
+  internal-key: ${CARDRAIL_INTERNAL_KEY:}
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,prometheus
+  endpoint:
+    health:
+      probes:
+        enabled: true
+
+logging:
+  structured:
+    format:
+      console: ${LOG_FORMAT:}
+  pattern:
+    correlation: "[%X{requestId:-}] "

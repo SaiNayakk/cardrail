@@ -1,0 +1,25 @@
+site_name: cardrail
+site_description: A card payments system, end to end
+repo_url: https://github.com/SaiNayakk/cardrail
+theme:
+  name: material
+  palette:
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+markdown_extensions:
+  - attr_list
+  - admonition
+  - pymdownx.superfences:
+      custom_fences:
+        - name: mermaid
+          class: mermaid
+          format: !!python/name:pymdownx.superfences.fence_code_format
+nav:
+  - Home: index.md
+  - Architecture: architecture.md
+  - Decisions: decisions.md
+  - Environments: environments.md
+  - Testing: testing.md
+  - Plan: plan.md

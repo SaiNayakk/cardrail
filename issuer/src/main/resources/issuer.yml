@@ -1,0 +1,58 @@
+# Kestrel Bank, the issuer. Named issuer.yml (not application.yml) so services can share one JVM host.
+spring:
+  application:
+    name: issuer
+  datasource:
+    url: ${ISSUER_DB_URL:jdbc:postgresql://localhost:5432/cardrail?currentSchema=issuer}
+    username: ${ISSUER_DB_USER:cardrail}
+    password: ${ISSUER_DB_PASSWORD:cardrail}
+    hikari:
+      maximum-pool-size: 5
+      pool-name: issuer
+      connection-timeout: 2000
+  flyway:
+    locations: classpath:db/issuer
+    schemas: issuer
+    default-schema: issuer
+  jackson:
+    default-property-inclusion: non_null
+  jmx:
+    enabled: false
+
+server:
+  port: ${ISSUER_PORT:8205}
+  address: ${ISSUER_BIND:127.0.0.1}
+  tomcat:
+    threads:
+      max: 16
+
+issuer:
+  institution-id: "286001"
+  iso-bind: ${ISSUER_ISO_BIND:127.0.0.1}
+  iso-port: ${ISSUER_ISO_PORT:9205}
+  pan-key: ${ISSUER_PAN_KEY:}
+  hash-key: ${ISSUER_HASH_KEY:}
+  cvk: ${ISSUER_CVK:}
+  trace-url: ${TRACE_URL:}
+  internal-key: ${CARDRAIL_INTERNAL_KEY:}
+  demo: ${CARDRAIL_DEMO:false}
+
+cardrail:
+  internal-key: ${CARDRAIL_INTERNAL_KEY:}
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,prometheus
+  endpoint:
+    health:
+      probes:
+        enabled: true
+
+logging:
+  structured:
+    format:
+      console: ${LOG_FORMAT:}
+  pattern:
+    correlation: "[%X{requestId:-}] "

@@ -1,0 +1,44 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 https://maven.apache.org/xsd/maven-4.0.0.xsd">
+  <modelVersion>4.0.0</modelVersion>
+
+  <parent>
+    <groupId>app.cardrail</groupId>
+    <artifactId>cardrail</artifactId>
+    <version>0.1.0-SNAPSHOT</version>
+  </parent>
+
+  <artifactId>host</artifactId>
+  <name>host</name>
+  <description>Runs services together in one JVM, grouped by failure domain: acquiring, network, issuing, or all of them (cell).</description>
+
+  <dependencies>
+    <dependency><groupId>app.cardrail</groupId><artifactId>gateway</artifactId><version>${project.version}</version></dependency>
+    <dependency><groupId>app.cardrail</groupId><artifactId>vault</artifactId><version>${project.version}</version></dependency>
+    <dependency><groupId>app.cardrail</groupId><artifactId>acquirer</artifactId><version>${project.version}</version></dependency>
+    <dependency><groupId>app.cardrail</groupId><artifactId>demoshop</artifactId><version>${project.version}</version></dependency>
+    <dependency><groupId>app.cardrail</groupId><artifactId>network</artifactId><version>${project.version}</version></dependency>
+    <dependency><groupId>app.cardrail</groupId><artifactId>trace</artifactId><version>${project.version}</version></dependency>
+    <dependency><groupId>app.cardrail</groupId><artifactId>issuer</artifactId><version>${project.version}</version></dependency>
+  </dependencies>
+
+  <build>
+    <finalName>cardrail-host</finalName>
+    <plugins>
+      <plugin>
+        <groupId>org.springframework.boot</groupId>
+        <artifactId>spring-boot-maven-plugin</artifactId>
+        <configuration>
+          <mainClass>app.cardrail.host.Host</mainClass>
+        </configuration>
+        <executions>
+          <execution>
+            <goals><goal>repackage</goal></goals>
+          </execution>
+        </executions>
+      </plugin>
+    </plugins>
+  </build>
+</project>

@@ -1,0 +1,59 @@
+package app.cardrail.issuer;
+
+import app.cardrail.iso8583.Luhn;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+
+import java.security.SecureRandom;
+import java.time.Clock;
+import java.time.YearMonth;
+import java.time.ZoneOffset;
+import java.util.UUID;
+
+/** Opens accounts and issues their cards. Kestrel Bank's BINs: 286001 for debit, 286002 for credit. */
+@Service
+public class CardIssuing {
+
+    public static final String DEBIT_BIN = "286001";
+    public static final String CREDIT_BIN = "286002";
+    private static final SecureRandom RANDOM = new SecureRandom();
+
+    private final IssuerStore store;
+    private final CardKeys keys;
+    private final Clock clock;
+
+    public CardIssuing(IssuerStore store, CardKeys keys, Clock clock) {
+        this.store = store;
+        this.keys = keys;
+        this.clock = clock;
+    }
+
+    public record IssuedCard(UUID cardholderId, UUID accountId, UUID cardId, String pan, String expiry, String cvv2) {}
+
+    /** A new cardholder with one account and an active card on it, valid for four years. */
+    @Transactional
+    public IssuedCard open(String name, String kind, long balanceCents, Long creditLimitCents) {
+        String pan;
+        do {
+            pan = pan(("DEBIT".equals(kind) ? DEBIT_BIN : CREDIT_BIN) + String.format("%09d", RANDOM.nextInt(1_000_000_000)));
+        } while (store.cardByPanHash(keys.panHash(pan)).isPresent());
+        YearMonth expires = YearMonth.now(clock.withZone(ZoneOffset.UTC)).plusYears(4);
+        String expiry = String.format("%02d%02d", expires.getYear() % 100, expires.getMonthValue());
+        return open(name, kind, balanceCents, creditLimitCents, pan, expiry, "ACTIVE", null);
+    }
+
+    /** As above, with every detail given: used for the published test cards. */
+    @Transactional
+    public IssuedCard open(String name, String kind, long balanceCents, Long creditLimitCents,
+                           String pan, String expiry, String status, String label) {
+        UUID cardholder = store.createCardholder(name);
+        UUID account = store.createAccount(cardholder, kind, balanceCents, creditLimitCents);
+        UUID card = store.createCard(account, keys.panHash(pan), keys.encrypt(pan), pan, expiry, status, label);
+        return new IssuedCard(cardholder, account, card, pan, expiry, keys.cvv2(pan, expiry));
+    }
+
+    /** A valid card number from its first 15 digits. */
+    public static String pan(String fifteen) {
+        return fifteen + Luhn.checkDigit(fifteen);
+    }
+}

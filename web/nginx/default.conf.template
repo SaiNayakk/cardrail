@@ -1,0 +1,106 @@
+# The public edge: serves the web app and forwards the few public APIs to their services, so the app and its
+# APIs share one origin. Nothing under /internal or /actuator is ever forwarded: the internal key is not the
+# only thing between the internet and those doors.
+#
+# ${ACQUIRING}, ${NETWORK} and ${ISSUING} are where each host is (all the same address on a cell's standby).
+server {
+    listen 80;
+    server_name _;
+    root /usr/share/nginx/html;
+    index index.html;
+
+    # Docker's DNS, so the hosts can come up after this does
+    resolver 127.0.0.11 valid=10s ipv6=off;
+
+    server_tokens off;
+    gzip on;
+    gzip_types text/css application/javascript application/json image/svg+xml;
+    gzip_min_length 1024;
+    client_max_body_size 16k;
+
+    add_header X-Content-Type-Options "nosniff" always;
+    add_header Referrer-Policy "no-referrer" always;
+    add_header Permissions-Policy "camera=(), microphone=(), geolocation=(), payment=()" always;
+
+    location = /healthz {
+        access_log off;
+        default_type text/plain;
+        return 200 'ok';
+    }
+
+    location ~ ^/(internal|actuator)(/|$) { return 404; }
+    location ~ /internal/ { return 404; }
+
+    # The hosted card form and the tokens it makes: Railpay's vault. It sets its own headers (it must be framable).
+    location /hosted/ {
+        set $vault http://${ACQUIRING}:8202;
+        proxy_pass $vault;
+        proxy_set_header Host $host;
+        proxy_set_header X-Request-Id $request_id;
+    }
+
+    # The demo shop's own server
+    location /api/shop/ {
+        set $shop http://${ACQUIRING}:8207;
+        rewrite ^/api/shop/(.*)$ /shop/$1 break;
+        proxy_pass $shop;
+        proxy_set_header X-Request-Id $request_id;
+        proxy_read_timeout 20s;
+        add_header Cache-Control "no-store" always;
+    }
+
+    # Railpay's public merchant API, for anyone who wants to try it with curl
+    location /api/railpay/ {
+        set $gateway http://${ACQUIRING}:8201;
+        rewrite ^/api/railpay/(.*)$ /v1/$1 break;
+        proxy_pass $gateway;
+        proxy_set_header Authorization $http_authorization;
+        proxy_set_header Idempotency-Key $http_idempotency_key;
+        proxy_set_header X-Request-Id $request_id;
+        proxy_read_timeout 20s;
+        add_header Cache-Control "no-store" always;
+    }
+
+    location = /api/test-cards {
+        set $issuer http://${ISSUING}:8205;
+        rewrite ^ /v1/test-cards break;
+        proxy_pass $issuer;
+        add_header Cache-Control "no-store" always;
+    }
+
+    location /api/network/ {
+        set $network http://${NETWORK}:8204;
+        rewrite ^/api/network/(.*)$ /v1/$1 break;
+        proxy_pass $network;
+    }
+
+    # The live trace; a stream stays open for up to two minutes
+    location /api/trace/ {
+        set $trace http://${NETWORK}:8206;
+        rewrite ^/api/trace/(.*)$ /v1/$1 break;
+        proxy_pass $trace;
+        proxy_http_version 1.1;
+        proxy_set_header Connection "";
+        proxy_buffering off;
+        proxy_read_timeout 150s;
+        add_header Cache-Control "no-store" always;
+    }
+
+    # built files have hashed names: cache for a year
+    location ~* \.(?:js|css|woff2|svg|png|ico)$ {
+        expires 1y;
+        add_header Cache-Control "public, immutable";
+        add_header X-Content-Type-Options "nosniff" always;
+        try_files $uri =404;
+    }
+
+    # every other address is the app (it routes in the browser); index.html itself is never cached
+    location / {
+        add_header Cache-Control "no-cache";
+        add_header X-Content-Type-Options "nosniff" always;
+        add_header X-Frame-Options "DENY" always;
+        add_header Referrer-Policy "no-referrer" always;
+        add_header Content-Security-Policy "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self'; connect-src 'self'; frame-src 'self'; frame-ancestors 'none'; base-uri 'self'; form-action 'self'" always;
+        try_files $uri /index.html;
+    }
+}

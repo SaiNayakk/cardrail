@@ -1,0 +1,56 @@
+# Railpay Acquiring. Named acquirer.yml (not application.yml) so services can share one JVM host.
+spring:
+  application:
+    name: acquirer
+  datasource:
+    url: ${ACQUIRER_DB_URL:jdbc:postgresql://localhost:5432/cardrail?currentSchema=acquirer}
+    username: ${ACQUIRER_DB_USER:cardrail}
+    password: ${ACQUIRER_DB_PASSWORD:cardrail}
+    hikari:
+      maximum-pool-size: 5
+      pool-name: acquirer
+      connection-timeout: 2000
+  flyway:
+    locations: classpath:db/acquirer
+    schemas: acquirer
+    default-schema: acquirer
+  jackson:
+    default-property-inclusion: non_null
+  jmx:
+    enabled: false
+
+server:
+  port: ${ACQUIRER_PORT:8203}
+  address: ${ACQUIRER_BIND:127.0.0.1}
+  tomcat:
+    threads:
+      max: 16
+
+acquirer:
+  institution-id: "400101"
+  network-host: ${ACQUIRER_NETWORK_HOST:127.0.0.1}
+  network-port: ${ACQUIRER_NETWORK_PORT:9204}
+  # Longer than the network waits for an issuer, so the network's own answer (91) arrives first.
+  network-timeout: ${ACQUIRER_NETWORK_TIMEOUT:5s}
+  trace-url: ${TRACE_URL:}
+  internal-key: ${CARDRAIL_INTERNAL_KEY:}
+
+cardrail:
+  internal-key: ${CARDRAIL_INTERNAL_KEY:}
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,prometheus
+  endpoint:
+    health:
+      probes:
+        enabled: true
+
+logging:
+  structured:
+    format:
+      console: ${LOG_FORMAT:}
+  pattern:
+    correlation: "[%X{requestId:-}] "

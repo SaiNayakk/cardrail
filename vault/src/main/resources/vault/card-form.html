@@ -1,0 +1,107 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Card details</title>
+<style>
+  :root { --ink: #1c1c1e; --muted: #6b6b70; --line: #d8d8dc; --accent: #2457d6; --bad: #b3261e; --bg: #ffffff; }
+  @media (prefers-color-scheme: dark) {
+    :root { --ink: #ececf0; --muted: #a0a0a8; --line: #3a3a40; --bg: #18181b; --bad: #f2b8b5; }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; padding: 4px; font: 16px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif; color: var(--ink); background: var(--bg); }
+  label { display: block; font-size: 14px; color: var(--muted); margin: 0 0 4px; }
+  input { width: 100%; padding: 12px; font: inherit; color: inherit; background: transparent; border: 1px solid var(--line);
+          border-radius: 8px; transition: border-color 150ms ease-out; }
+  input:focus { outline: none; border-color: var(--accent); }
+  input[aria-invalid="true"] { border-color: var(--bad); }
+  .row { display: flex; gap: 12px; margin-top: 12px; }
+  .row > div { flex: 1; }
+  .error { min-height: 24px; margin: 8px 0 0; font-size: 14px; color: var(--bad); }
+  .note { margin: 4px 0 0; font-size: 12px; color: var(--muted); }
+</style>
+</head>
+<body>
+<form id="card" novalidate autocomplete="on">
+  <label for="number">Card number</label>
+  <input id="number" name="cardnumber" inputmode="numeric" autocomplete="cc-number" placeholder="2860 0100 0000 0012" maxlength="23">
+  <div class="row">
+    <div>
+      <label for="expiry">Expiry (MM/YY)</label>
+      <input id="expiry" name="exp" inputmode="numeric" autocomplete="cc-exp" placeholder="12/30" maxlength="5">
+    </div>
+    <div>
+      <label for="cvc">Security code</label>
+      <input id="cvc" name="cvc" inputmode="numeric" autocomplete="cc-csc" placeholder="123" maxlength="4">
+    </div>
+  </div>
+  <p class="error" id="error" role="alert"></p>
+  <p class="note">Your card details go straight to Railpay. The shop never sees them.</p>
+</form>
+<script>
+(function () {
+  "use strict";
+  var params = new URLSearchParams(location.search);
+  var key = params.get("key");
+  var parentOrigin = params.get("origin");
+  var number = document.getElementById("number");
+  var expiry = document.getElementById("expiry");
+  var cvc = document.getElementById("cvc");
+  var error = document.getElementById("error");
+
+  number.addEventListener("input", function () {
+    var digits = number.value.replace(/\D/g, "").slice(0, 19);
+    number.value = digits.replace(/(.{4})/g, "$1 ").trim();
+    number.removeAttribute("aria-invalid");
+  });
+  expiry.addEventListener("input", function () {
+    var digits = expiry.value.replace(/\D/g, "").slice(0, 4);
+    expiry.value = digits.length > 2 ? digits.slice(0, 2) + "/" + digits.slice(2) : digits;
+    expiry.removeAttribute("aria-invalid");
+  });
+  cvc.addEventListener("input", function () { cvc.value = cvc.value.replace(/\D/g, "").slice(0, 4); });
+
+  function send(message) {
+    if (parentOrigin) { parent.postMessage(message, parentOrigin); }
+  }
+
+  function fail(text, field) {
+    error.textContent = text;
+    if (field) { field.setAttribute("aria-invalid", "true"); field.focus(); }
+    send({ type: "cardrail:error", message: text });
+  }
+
+  function tokenise() {
+    error.textContent = "";
+    var digits = number.value.replace(/\D/g, "");
+    var exp = expiry.value.split("/");
+    if (digits.length < 12) { return fail("Enter the card number.", number); }
+    if (exp.length !== 2 || exp[0].length !== 2 || exp[1].length !== 2) { return fail("Enter the expiry as MM/YY.", expiry); }
+    fetch("tokens", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ publishableKey: key, number: digits, expMonth: +exp[0], expYear: +exp[1], cvc: cvc.value || null })
+    }).then(function (response) {
+      return response.json().then(function (body) { return { ok: response.ok, body: body }; });
+    }).then(function (result) {
+      if (!result.ok) {
+        var field = { invalid_number: number, invalid_expiry: expiry, expired_card: expiry, invalid_cvc: cvc }[result.body.code];
+        return fail(result.body.detail || "That card can't be used.", field);
+      }
+      send({ type: "cardrail:token", token: result.body });
+    }).catch(function () {
+      fail("We couldn't reach Railpay. Check your connection and try again.");
+    });
+  }
+
+  window.addEventListener("message", function (event) {
+    if (event.origin !== parentOrigin || !event.data || event.data.type !== "cardrail:tokenise") { return; }
+    tokenise();
+  });
+  document.getElementById("card").addEventListener("submit", function (event) { event.preventDefault(); tokenise(); });
+  send({ type: "cardrail:ready" });
+})();
+</script>
+</body>
+</html>

@@ -23,6 +23,17 @@ One repository, one Maven module per service. Modules are tested on their own in
 | Module | What it is |
 |---|---|
 | [`iso8583`](iso8583) | ISO 8583 messages as Railnet speaks them: field specs, bitmaps, encoding, framing over TCP |
+| [`common`](common) | What every service shares: errors, request ids, the internal key, ISO 8583 links over TCP, trace reporting |
+| [`gateway`](gateway) | Railpay: the merchant API, API keys, idempotency keys |
+| [`vault`](vault) | Railpay's card vault and hosted card form |
+| [`acquirer`](acquirer) | Railpay Acquiring: merchants, MIDs and terminals, authorisations to the network |
+| [`network`](network) | Railnet: BIN routing between acquirers and issuers |
+| [`issuer`](issuer) | Kestrel Bank: cards, accounts, holds, the decision on every authorisation |
+| [`trace`](trace) | The live trace of every message about a payment |
+| [`demoshop`](demoshop) | A demo merchant's server |
+| [`host`](host) | Runs services together in one JVM: `acquiring`, `network`, `issuing` or `cell` |
+| [`web`](web) | The demo web app (Angular) and the public edge (nginx) |
+| [`e2e`](e2e) | End-to-end tests against pre-prod |
 
 ## Build
 
@@ -30,4 +41,5 @@ One repository, one Maven module per service. Modules are tested on their own in
 ./mvnw verify
 ```
 
-Needs Java 21. See [the plan](docs/plan.md) for what comes next and [decisions](docs/decisions.md) for why it is built this way.
+Needs Java 21 and Docker (the service tests use a real Postgres). To run the whole system locally, see
+[environments](docs/environments.md). See [architecture](docs/architecture.md), [the plan](docs/plan.md) for what comes next and [decisions](docs/decisions.md) for why it is built this way.
