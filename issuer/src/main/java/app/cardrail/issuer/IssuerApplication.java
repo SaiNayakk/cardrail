@@ -5,6 +5,7 @@ import org.springframework.boot.autoconfigure.SpringBootApplication;
 import org.springframework.boot.builder.SpringApplicationBuilder;
 import org.springframework.boot.context.properties.ConfigurationPropertiesScan;
 import org.springframework.context.annotation.Import;
+import org.springframework.scheduling.annotation.EnableScheduling;
 
 /**
  * Kestrel Bank, the issuer. Runs alone ({@link #main}) or in a host ({@link #builder()}); either way it reads
@@ -12,6 +13,7 @@ import org.springframework.context.annotation.Import;
  */
 @SpringBootApplication
 @ConfigurationPropertiesScan
+@EnableScheduling
 @Import(CommonWeb.class)
 public class IssuerApplication {
 

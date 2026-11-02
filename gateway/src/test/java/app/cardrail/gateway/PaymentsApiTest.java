@@ -40,6 +40,7 @@ class PaymentsApiTest {
     static final ObjectMapper JSON = new ObjectMapper();
     static final AtomicInteger authorisations = new AtomicInteger();
     static final AtomicInteger merchantsMade = new AtomicInteger();
+    static final java.util.List<String> disputeAnswers = new java.util.concurrent.CopyOnWriteArrayList<>();
     static final java.util.List<Map.Entry<String, String>> webhooks = new java.util.concurrent.CopyOnWriteArrayList<>();
     static final HttpServer fakes;
 
@@ -88,6 +89,10 @@ class PaymentsApiTest {
                 } else {
                     reply(ex, 200, Map.of("rrn", rrn, "stan", "000001", "status", "APPROVED", "responseCode", "00", "responseText", "Approved", "authCode", "QWE123"));
                 }
+            });
+            fakes.createContext("/internal/v1/disputes/", ex -> {
+                disputeAnswers.add(ex.getRequestURI().getPath());
+                reply(ex, 200, Map.of("status", "REPRESENTING"));
             });
             fakes.createContext("/hooks", ex -> {
                 webhooks.add(Map.entry(ex.getRequestHeaders().getFirst("Railpay-Signature"),
@@ -140,6 +145,60 @@ class PaymentsApiTest {
         secretKey = created.secretKey();
         webhookSecret = created.webhookSecret();
         webhooks.clear();
+    }
+
+    // Phase 3: disputes and payouts, as the acquirer tells Railpay about them
+
+    @Test
+    void aChargebackBecomesADisputeTheMerchantCanAnswer() throws Exception {
+        JsonNode payment = JSON.readTree(v2("POST", "/payments", Map.of("amount", 2500, "currency", "usd", "source", "tok_good"), null).getBody());
+        String mid = merchants.authenticate("Bearer " + secretKey).acquirerMid();
+        String disputeId = "dsp_" + System.nanoTime();
+        var notice = Map.of("type", "dispute.created", "disputeId", disputeId, "rrn", payment.get("reference").asText(), "mid", mid,
+                "amountCents", 2500, "reasonCode", "1310");
+
+        notify(notice);
+        notify(notice);   // a repeat changes nothing
+
+        JsonNode disputes = JSON.readTree(v2("GET", "/disputes", null, null).getBody());
+        assertThat(disputes.get("data")).hasSize(1);
+        JsonNode dispute = disputes.get("data").get(0);
+        assertThat(dispute.get("status").asText()).isEqualTo("needs_response");
+        assertThat(dispute.get("reason").asText()).isEqualTo("not received");
+        assertThat(dispute.get("payment").asText()).isEqualTo(payment.get("id").asText());
+
+        JsonNode answered = JSON.readTree(v2("POST", "/disputes/" + disputeId + "/evidence", Map.of("evidence", "Signed for on delivery"), null).getBody());
+        assertThat(answered.get("status").asText()).isEqualTo("under_review");
+        assertThat(disputeAnswers).anyMatch(path -> path.contains(disputeId + "/answer"));
+        assertThat(v2("POST", "/disputes/" + disputeId + "/accept", null, null).getStatusCode().value()).isEqualTo(409);
+
+        notify(Map.of("type", "dispute.won", "disputeId", disputeId, "rrn", payment.get("reference").asText(), "mid", mid,
+                "amountCents", 2500, "reasonCode", "1310"));
+        assertThat(JSON.readTree(v2("GET", "/disputes/" + disputeId, null, null).getBody()).get("status").asText()).isEqualTo("won");
+
+        sender.deliver();
+        assertThat(webhooks.stream().map(d -> d.getValue()).filter(b -> b.contains(disputeId)))
+                .anyMatch(b -> b.contains("dispute.created")).anyMatch(b -> b.contains("dispute.won"));
+    }
+
+    @Test
+    void payoutsAreListedWithWhatTheyAreMadeOf() throws Exception {
+        String mid = merchants.authenticate("Bearer " + secretKey).acquirerMid();
+        notify(Map.of("type", "payout.paid", "payoutId", "po_" + System.nanoTime(), "mid", mid, "amountCents", 9750, "salesCents", 10000,
+                "refundsCents", 0, "feesCents", 250, "disputesCents", 0));
+
+        JsonNode payouts = JSON.readTree(v2("GET", "/payouts", null, null).getBody());
+        assertThat(payouts.get("data")).hasSize(1);
+        assertThat(payouts.get("data").get(0).get("amount").asLong()).isEqualTo(9750);
+        assertThat(payouts.get("data").get(0).get("fees").asLong()).isEqualTo(250);
+    }
+
+    private void notify(Map<String, ?> event) {
+        HttpHeaders headers = new HttpHeaders();
+        headers.set("X-Internal-Key", "test-internal-key-0123456789");
+        headers.setContentType(org.springframework.http.MediaType.APPLICATION_JSON);
+        var response = http.exchange("/internal/v1/notifications", HttpMethod.POST, new HttpEntity<>(event, headers), String.class);
+        assertThat(response.getStatusCode().value()).isEqualTo(204);
     }
 
     // Version 2: the whole lifecycle

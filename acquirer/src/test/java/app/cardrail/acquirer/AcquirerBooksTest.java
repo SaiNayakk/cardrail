@@ -133,8 +133,11 @@ class AcquirerBooksTest {
         assertThat(books.ledger().balance("merchant:" + mid)).isEqualTo(-9_750);
         assertThat(books.ledger().balance("income:mdr") - mdrBefore).isEqualTo(-250);
 
+        int filesBefore = filesReceived.size();
         books.present();
-        assertThat(ClearingFile.parse(filesReceived.getLast()).records()).extracting(Record::rrn).doesNotContain(sale);
+        // nothing new to present from this merchant: either no file at all, or one without this sale
+        assertThat(filesReceived.subList(filesBefore, filesReceived.size()))
+                .allSatisfy(f -> assertThat(ClearingFile.parse(f).records()).extracting(Record::rrn).doesNotContain(sale));
 
         // Railnet settles: keeps interchange 26c and its fee 13c, pays the rest
         long dueBefore = books.ledger().balance(AcquirerBooks.DUE_RAILNET);
