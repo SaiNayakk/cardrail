@@ -40,6 +40,14 @@ Pre-prod runs the clearing day fast (files every 5 s, settlement every 15 s), so
 | RECON-01 | Every party's books add up to zero |
 | RECON-02 | Once the day is quiet, everything cleared has been settled and booked by both sides: nothing is due anywhere |
 
+## The cardholder's side
+
+| Id | Checks |
+|---|---|
+| STEPUP-01 | The card's bank asks the cardholder to confirm; the code is in their app; with it the payment goes through, authorised again with the proof |
+| CARD-01 | A visitor's own card: frozen it's declined (62), over its own limit declined (61), reported lost declined (41), and the new card works once activated |
+| CARD-02 | The shared test cards can be looked at, never changed |
+
 ## Chaos experiments
 
 They pause real containers in pre-prod, then check that nobody is charged for a payment the merchant was told

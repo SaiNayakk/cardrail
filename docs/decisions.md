@@ -149,3 +149,49 @@ that owes after chargebacks has it taken from the next payout.
 records only means a payout always equals money that arrived. The MDR is the acquirer's income; interchange and
 Railnet's fee are its costs, so on a small debit payment its margin can be negative, which is real and worth seeing
 in the books.
+
+## ADR-012: Risk is explainable, and the cardholder sets rules too { #adr-012-risk }
+
+**Decision.** After "is this the real card", Kestrel Bank applies, in order: the cardholder's own controls (online on
+or off, a limit per payment and per day, blocked merchant categories), velocity (more than five approvals in ten
+minutes), and a fraud score of a few named signals added up (far above this card's usual spend, $500 or more, a burst
+of payments, a risky kind of merchant, a large first payment). Each authorisation records its score and reasons. At
+80 it is declined as suspected fraud (59); from 50 an online payment must be confirmed by the cardholder (step-up).
+
+**Why.** A score that can be explained can be shown to the cardholder ("declined: 3 payments in 10 minutes") and
+argued about in an interview; an opaque model can't be checked by reading the code. The published test cards are
+shared by every visitor, so signals about one person's habits are skipped for them, and they can't be changed;
+visitors open a card of their own to try controls, freezing and losing a card.
+
+**Lost.** A real issuer's model would weigh hundreds of signals and learn from chargebacks.
+
+## ADR-013: Step-up through a directory, as in 3-D Secure; a new API version for it { #adr-013-step-up }
+
+**Decision.** When Kestrel Bank answers 1A (authenticate the cardholder first), Railpay asks Railnet's directory
+server, which finds the issuer by BIN and asks its ACS. The ACS shows the shopper a page of its own, where they type
+the one-time code their Kestrel Bank app shows (or approve in the app). Success gives an authentication value: an
+HMAC of the authentication, the card and the amount under a key only Kestrel Bank holds. Railpay authorises again
+with it in field 48 (security level 212, value, id) and a new reference; Kestrel checks it and that it is unused, and
+skips the step-up. Merchant API v3 returns `requires_action` with the page to show and a `confirm` call; v2 declines
+such payments and shows v3's as pending (ADR-006).
+
+**Why.** It is how online card payments are authenticated in Europe and India, and increasingly in the US: the
+merchant never sees how the bank authenticates, the network only routes, and the proof is bound to one card and
+amount and spent once, so a captured value can't be replayed. Adding a status that v2 clients were promised they'd
+never see is a breaking change, so it is a new version.
+
+**Lost.** No frictionless flow with device data, no challenge in the browser's native sheet, no liability shift in
+clearing.
+
+## ADR-014: Credit card statements with a grace period { #adr-014-statements }
+
+**Decision.** Each credit account's cycle ends with a statement. Interest is the average daily balance times the APR
+(24.99%) for 30 days, charged only if the previous statement wasn't paid in full by its due date; the minimum due is
+the balance under $25, otherwise the greater of $25 and 1% of the balance plus the interest and fees just charged; a
+$25 late fee when the minimum wasn't paid. Cycles are 30 days (10 minutes in pre-prod), and interest always counts a
+cycle as 30 days.
+
+**Why.** That is how US credit cards charge, and the grace period is the part most people don't know: pay the
+statement in full and purchases cost nothing.
+
+**Lost.** No promotional rates, no cash advances (they'd have no grace period), no penalty APR.
