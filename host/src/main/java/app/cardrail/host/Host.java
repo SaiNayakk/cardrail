@@ -56,11 +56,11 @@ public final class Host {
 
     public static void main(String[] args) {
         String group = args.length > 0 ? args[0] : System.getenv().getOrDefault("CARDRAIL_HOST", "");
-        if (List.of("migrate", "replicate", "promote").contains(group)) {
+        if (List.of("migrate", "replicate", "promote", "rejoin", "release", "resume").contains(group)) {
             System.exit(admin(group));
         }
         if (!GROUPS.containsKey(group)) {
-            System.err.println("Usage: java -jar cardrail-host.jar <acquiring|network|issuing|banks|rails|cell|migrate|replicate|promote>");
+            System.err.println("Usage: java -jar cardrail-host.jar <acquiring|network|issuing|banks|rails|cell|migrate|replicate|promote|rejoin|release|resume>");
             System.exit(2);
         }
         List<String> rest = new ArrayList<>(Arrays.asList(args.length > 0 ? Arrays.copyOfRange(args, 1, args.length) : args));
@@ -112,6 +112,13 @@ public final class Host {
                 case "migrate" -> admin.migrate();
                 case "replicate" -> {
                     if (!admin.replicate()) {
+                        return 2;
+                    }
+                }
+                case "rejoin" -> admin.rejoin();
+                case "release" -> admin.release();
+                case "resume" -> {
+                    if (!admin.resume()) {
                         return 2;
                     }
                 }

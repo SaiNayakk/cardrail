@@ -28,6 +28,7 @@ import java.util.Map;
  *   <li>{@code promote}: takes the other cell's schemas over: stops the subscription and moves every sequence
  *       past the ids that were copied, since logical replication doesn't carry sequences. It publishes them too,
  *       so the other cell can copy everything back when it returns.</li>
+ *   <li>{@code rejoin}, {@code release}, {@code resume}: handing a cell's half back (docs/runbooks.md).</li>
  * </ul>
  */
 final class CellAdmin {
@@ -161,26 +162,95 @@ final class CellAdmin {
                 st.execute("DROP SUBSCRIPTION " + subscription);
                 log.info("Stopped copying from cell {}", peer);
             }
-            List<String[]> sequences = new ArrayList<>();
-            try (ResultSet rs = st.executeQuery("""
-                    SELECT s.relnamespace::regnamespace::text, s.relname, t.relnamespace::regnamespace::text, t.relname, a.attname
-                    FROM pg_class s
-                    JOIN pg_depend d ON d.objid = s.oid AND d.deptype IN ('a', 'i')
-                    JOIN pg_class t ON t.oid = d.refobjid
-                    JOIN pg_attribute a ON a.attrelid = t.oid AND a.attnum = d.refobjsubid
-                    WHERE s.relkind = 'S' AND s.relnamespace::regnamespace::text = ANY (string_to_array('%s', ','))
-                    """.formatted(String.join(",", owned(peer))))) {
-                while (rs.next()) {
-                    sequences.add(new String[]{rs.getString(1), rs.getString(2), rs.getString(3), rs.getString(4), rs.getString(5)});
+            int moved = moveSequences(st, owned(peer));
+            publish(st, new ArrayList<>(SCHEMAS.keySet()));
+            log.info("Cell {} now owns every schema; moved {} sequences past the copied ids", cell, moved);
+        }
+    }
+
+    /**
+     * Failback, on the cell coming back while the other still holds its half: forgets everything it had (the holder
+     * has the newer truth) and copies every table from the holder, which publishes them all since it took over.
+     */
+    void rejoin() throws SQLException {
+        try (Connection c = connect(); Statement st = c.createStatement()) {
+            if (exists(st, "SELECT 1 FROM pg_subscription WHERE subname = 'cardrail_from_" + peer + "'")) {
+                st.execute("DROP SUBSCRIPTION cardrail_from_" + peer);
+            }
+            st.execute("DROP PUBLICATION IF EXISTS cardrail_" + cell);
+            // the slot the holder's copy used before the takeover, kept here ever since
+            st.execute("SELECT pg_drop_replication_slot(slot_name) FROM pg_replication_slots WHERE slot_name = 'cardrail_from_"
+                    + cell + "' AND NOT active");
+            st.execute("TRUNCATE " + String.join(", ", tables(st, new ArrayList<>(SCHEMAS.keySet()))) + " CASCADE");
+            st.execute("CREATE SUBSCRIPTION cardrail_from_" + peer + " CONNECTION '" + conninfo(peerUrl, user, peerPassword).replace("'", "''")
+                    + "' PUBLICATION cardrail_" + peer + " WITH (copy_data = true, slot_name = 'cardrail_from_" + peer + "')");
+            log.info("Copying everything from cell {} before taking this cell's half back", peer);
+        }
+    }
+
+    /**
+     * Failback, on the returning cell once the holder has stopped serving: waits for the holder's last row, then
+     * owns its half again. False if the copy didn't catch up within five minutes (nothing changed; try again).
+     */
+    boolean resume() throws SQLException, InterruptedException {
+        String subscription = "cardrail_from_" + peer;
+        try (Connection c = connect(); Statement st = c.createStatement();
+             Connection p = DriverManager.getConnection(peerUrl, user, peerPassword); Statement ps = p.createStatement()) {
+            boolean caughtUp = false;
+            for (int i = 0; i < 60 && !caughtUp; i++) {
+                String peerLsn;
+                try (ResultSet rs = ps.executeQuery("SELECT pg_current_wal_lsn()")) {
+                    rs.next();
+                    peerLsn = rs.getString(1);
+                }
+                caughtUp = !exists(st, "SELECT 1 FROM pg_subscription_rel r JOIN pg_subscription s ON s.oid = r.srsubid "
+                        + "WHERE s.subname = '" + subscription + "' AND r.srsubstate <> 'r'")
+                        && exists(st, "SELECT 1 FROM pg_stat_subscription WHERE subname = '" + subscription
+                        + "' AND relid IS NULL AND latest_end_lsn >= '" + peerLsn + "'::pg_lsn");
+                if (!caughtUp) {
+                    Thread.sleep(5000);
                 }
             }
-            for (String[] s : sequences) {
-                st.execute("SELECT setval('" + s[0] + "." + s[1] + "', GREATEST((SELECT max(" + s[4] + ") FROM "
-                        + s[2] + "." + s[3] + "), 0) + 1000, false)");
+            if (!caughtUp) {
+                log.warn("The copy from cell {} hasn't caught up; nothing changed", peer);
+                return false;
             }
-            publish(st, new ArrayList<>(SCHEMAS.keySet()));
-            log.info("Cell {} now owns every schema; moved {} sequences past the copied ids", cell, sequences.size());
+            st.execute("DROP SUBSCRIPTION " + subscription);
+            int moved = moveSequences(st, owned(cell));
+            publish(st, owned(cell));
+            log.info("Cell {} owns its half again; moved {} sequences past the copied ids", cell, moved);
+            return true;
         }
+    }
+
+    /** Failback, on the holder once it has stopped serving: publishes only its own half again. */
+    void release() throws SQLException {
+        try (Connection c = connect(); Statement st = c.createStatement()) {
+            st.execute("ALTER PUBLICATION cardrail_" + cell + " SET TABLE " + String.join(", ", tables(st, owned(cell))));
+            log.info("Cell {} publishes only its own half again", cell);
+        }
+    }
+
+    /** Moves each sequence in these schemas past the largest id its column holds: copied rows don't move them. */
+    private static int moveSequences(Statement st, List<String> schemas) throws SQLException {
+        List<String[]> sequences = new ArrayList<>();
+        try (ResultSet rs = st.executeQuery("""
+                SELECT s.relnamespace::regnamespace::text, s.relname, t.relnamespace::regnamespace::text, t.relname, a.attname
+                FROM pg_class s
+                JOIN pg_depend d ON d.objid = s.oid AND d.deptype IN ('a', 'i')
+                JOIN pg_class t ON t.oid = d.refobjid
+                JOIN pg_attribute a ON a.attrelid = t.oid AND a.attnum = d.refobjsubid
+                WHERE s.relkind = 'S' AND s.relnamespace::regnamespace::text = ANY (string_to_array('%s', ','))
+                """.formatted(String.join(",", schemas)))) {
+            while (rs.next()) {
+                sequences.add(new String[]{rs.getString(1), rs.getString(2), rs.getString(3), rs.getString(4), rs.getString(5)});
+            }
+        }
+        for (String[] s : sequences) {
+            st.execute("SELECT setval('" + s[0] + "." + s[1] + "', GREATEST((SELECT max(" + s[4] + ") FROM "
+                    + s[2] + "." + s[3] + "), 0) + 1000, false)");
+        }
+        return sequences.size();
     }
 
     private Connection connect() throws SQLException {

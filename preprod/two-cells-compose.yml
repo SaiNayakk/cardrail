@@ -142,16 +142,14 @@ services:
     mem_limit: 320m
 
   # The phone's cell is lost: the laptop stops copying, takes the banks' schemas over, and runs every service in
-  # one JVM, answering under both names (ChaosTest's CELL-02 runs this; profile "takeover").
-  promote-b:
+  # one JVM, answering under both names; later it hands them back (TwoCellsTest; profile "takeover").
+  # A cell's database commands (promote, rejoin, release, resume, replicate): the cell and its databases are given per run
+  admin:
     <<: *host
     profiles: ["takeover"]
     restart: "no"
-    command: ["promote"]
     environment:
       <<: *env
-      CARDRAIL_CELL: b
-      CARDRAIL_DB_URL: jdbc:postgresql://pg-b:5432/cardrail
 
   standby-b:
     <<: *host

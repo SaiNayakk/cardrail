@@ -17,3 +17,4 @@ dist/
 deploy/laptop/tunnel/
 deploy/phone/tunnel/
 deploy/**/secrets.env
+deploy/*.env

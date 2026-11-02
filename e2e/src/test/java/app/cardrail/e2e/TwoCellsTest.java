@@ -29,6 +29,8 @@ class TwoCellsTest {
     static String compose;
     static JsonNode ownCard;
     static String firstReference;
+    static JsonNode heldCard;
+    static String heldReference;
 
     @BeforeAll
     static void setUp() {
@@ -59,7 +61,7 @@ class TwoCellsTest {
     @DisplayName("CELL-02: the phone's cell is lost; the laptop takes the banks over, with every card and payment they had")
     void cell02() throws Exception {
         compose("stop", "banks", "pg-a", "rails");
-        compose("--profile", "takeover", "run", "--rm", "promote-b");
+        admin("b", "promote");
         compose("--profile", "takeover", "up", "-d", "--wait", "standby-b");
 
         // the visitor's card still signs in, and its first payment is in its history
@@ -73,7 +75,45 @@ class TwoCellsTest {
         // and it keeps paying, as does a card issued after the takeover
         assertThat(edge.pay("tee", 1, ownCard).get("status").asText()).isEqualTo("captured");
         JsonNode fresh = cardFor(edge.post("/api/cardholder/cards", Map.of("kind", "DEBIT")).body().get("card"));
-        assertThat(edge.pay("sticker", 1, fresh).get("status").asText()).isEqualTo("captured");
+        JsonNode whileHeld = edge.pay("sticker", 1, fresh);
+        assertThat(whileHeld.get("status").asText()).isEqualTo("captured");
+        heldReference = whileHeld.get("reference").asText();
+        heldCard = fresh;
+    }
+
+    @Test
+    @Order(3)
+    @DisplayName("CELL-03: the phone's cell comes back and is handed its banks again, with what happened while it was away")
+    void cell03() throws Exception {
+        compose("start", "pg-a");
+        admin("a", "rejoin");                          // the phone copies everything from the laptop, which keeps serving
+        compose("--profile", "takeover", "stop", "standby-b");
+        admin("b", "release");
+        admin("a", "resume");                          // the last rows, then the phone owns its half again
+        admin("b", "replicate");
+        admin("a", "replicate");
+        compose("up", "-d", "--wait", "--no-deps", "banks", "rails");
+
+        // the card issued and used while the laptop held the banks is the phone's now, with its history
+        Edge.Response session = edge.post("/api/cardholder/sessions", Map.of("number", heldCard.get("number").asText(),
+                "expiry", heldCard.get("expiry").asText(), "cvv2", heldCard.get("cvv2").asText()));
+        assertThat(session.status()).isEqualTo(201);
+        assertThat(edge.get("/api/cardholder/transactions", session.body().get("token").asText()).body().findValuesAsText("reference"))
+                .contains(heldReference);
+        assertThat(eventually("pg-a", "SELECT count(*) FROM issuer.authorisations WHERE rrn = '" + heldReference + "'")).isEqualTo("1");
+
+        // and payments cross both cells again, copied both ways
+        JsonNode after = edge.pay("tee", 1, heldCard);
+        assertThat(after.get("status").asText()).isEqualTo("captured");
+        assertThat(eventually("pg-b", "SELECT count(*) FROM issuer.authorisations WHERE rrn = '" + after.get("reference").asText() + "'")).isEqualTo("1");
+    }
+
+    /** One of a cell's database commands, run against cell {@code cell}'s database with the other as its peer. */
+    private static void admin(String cell, String command) throws Exception {
+        String peer = cell.equals("a") ? "b" : "a";
+        compose("--profile", "takeover", "run", "--rm", "-e", "CARDRAIL_CELL=" + cell,
+                "-e", "CARDRAIL_DB_URL=jdbc:postgresql://pg-" + cell + ":5432/cardrail",
+                "-e", "CARDRAIL_PEER_DB_URL=jdbc:postgresql://pg-" + peer + ":5432/cardrail", "admin", command);
     }
 
     /** An issued card as the hosted form takes it: the bank gives the expiry as YYMM, the form takes MM/YY. */
