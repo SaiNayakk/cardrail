@@ -30,6 +30,7 @@ One repository, one Maven module per service. Modules are tested on their own in
 | [`network`](network) | Railnet: BIN routing between acquirers and issuers |
 | [`issuer`](issuer) | Kestrel Bank: cards, accounts, holds, the decision on every authorisation |
 | [`trace`](trace) | The live trace of every message about a payment |
+| [`closedloop`](closedloop) | Meridian: a closed loop, issuer, acquirer and network in one, like American Express |
 | [`demoshop`](demoshop) | A demo merchant's server |
 | [`host`](host) | Runs services together in one JVM: `acquiring`, `network`, `issuing` or `cell` |
 | [`web`](web) | The demo web app (Angular) and the public edge (nginx) |

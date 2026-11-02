@@ -30,6 +30,7 @@ One repository, one Maven module per service. Modules are tested on their own in
 | [`network`](https://github.com/SaiNayakk/cardrail/tree/main/network) | Railnet: BIN routing between acquirers and issuers |
 | [`issuer`](https://github.com/SaiNayakk/cardrail/tree/main/issuer) | Kestrel Bank: cards, accounts, holds, the decision on every authorisation |
 | [`trace`](https://github.com/SaiNayakk/cardrail/tree/main/trace) | The live trace of every message about a payment |
+| [`closedloop`](https://github.com/SaiNayakk/cardrail/tree/main/closedloop) | Meridian: a closed loop, issuer, acquirer and network in one, like American Express |
 | [`demoshop`](https://github.com/SaiNayakk/cardrail/tree/main/demoshop) | A demo merchant's server |
 | [`host`](https://github.com/SaiNayakk/cardrail/tree/main/host) | Runs services together in one JVM: `acquiring`, `network`, `issuing` or `cell` |
 | [`web`](https://github.com/SaiNayakk/cardrail/tree/main/web) | The demo web app (Angular) and the public edge (nginx) |

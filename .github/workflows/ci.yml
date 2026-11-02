@@ -144,6 +144,10 @@ jobs:
         run: ./mvnw -B -pl e2e test -De2e.baseUrl=http://127.0.0.1:8280 -Dtest='AuthorisationJourneyTest,ClearingJourneyTest,CardholderJourneyTest,ClosedLoopJourneyTest'
       - name: Chaos experiments
         run: ./mvnw -B -pl e2e test -De2e.baseUrl=http://127.0.0.1:8280 -De2e.chaos=${{ github.workspace }}/preprod/docker-compose.yml -Dtest='ChaosTest' -Dsurefire.reportNameSuffix=chaos
+      - name: Performance (PERF-01)
+        run: |
+          mkdir -p preprod/out
+          docker compose -f preprod/docker-compose.yml --profile perf run --rm k6 run /scripts/perf-01-checkout.js
       - name: Memory each host used
         if: always()
         run: docker stats --no-stream --format '{{.Name}} {{.MemUsage}}' | tee preprod-memory.txt
@@ -158,6 +162,7 @@ jobs:
           path: |
             preprod-memory.txt
             preprod-logs.txt
+            preprod/out/
             e2e/target/e2e-reports/
           retention-days: 14
       - name: Destroy pre-prod

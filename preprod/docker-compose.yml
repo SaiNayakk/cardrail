@@ -137,3 +137,15 @@ services:
     ports:
       - "127.0.0.1:${CARDRAIL_WEB_PORT:-8280}:80"
     mem_limit: 64m
+
+  # Load generator for the performance tests: docker compose run --rm k6 run /scripts/perf-01-checkout.js
+  k6:
+    image: grafana/k6:2.3.0
+    profiles: ["perf"]
+    environment:
+      BASE_URL: http://web
+    volumes:
+      - ./k6:/scripts:ro
+      - ./out:/out
+    cpus: 2
+
