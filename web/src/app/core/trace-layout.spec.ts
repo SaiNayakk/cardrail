@@ -1,5 +1,11 @@
 import { describe, it, expect } from 'vitest';
-import { DEFAULT_LANES, getLaneIndex, layoutEventArrow, layoutTraceArrows } from './trace-layout';
+import {
+  DEFAULT_LANES,
+  getLaneIndex,
+  layoutEventArrow,
+  layoutSameLaneNote,
+  layoutTraceArrows,
+} from './trace-layout';
 import { TraceEvent } from './types';
 
 describe('trace layout', () => {
@@ -106,5 +112,55 @@ describe('trace layout', () => {
     expect(arrows[0].event.id).toBe(1);
     expect(arrows[1].event.id).toBe(2);
     expect(arrows[2].event.id).toBe(3);
+  });
+
+  describe('same-lane note layout helper', () => {
+    it('computes geometry for an internal lane marker preventing zero-length arrows', () => {
+      // Lane index 2 corresponds to railpay-acquiring in 5 lanes
+      const layout = layoutSameLaneNote(2, 5);
+      expect(layout.laneIndex).toBe(2);
+      expect(layout.leftPercent).toBe(40);
+      expect(layout.widthPercent).toBe(20);
+      expect(layout.centerPercent).toBe(50);
+      expect(layout.widthPercent).toBeGreaterThan(0);
+    });
+
+    it('accepts a TraceEvent and lanes list directly', () => {
+      const clearingNote: TraceEvent = {
+        id: 10,
+        traceKey: 'trace_123',
+        reporter: 'railpay-acquiring',
+        from: 'railpay-acquiring',
+        to: 'railpay-acquiring',
+        kind: 'note',
+        summary: 'Presented for clearing: sale of $19.99, merchant fee $0.50',
+        at: '2026-11-02T10:00:05.000Z',
+      };
+      const layout = layoutSameLaneNote(clearingNote, DEFAULT_LANES);
+      expect(layout.laneIndex).toBe(2);
+      expect(layout.leftPercent).toBe(40);
+      expect(layout.widthPercent).toBe(20);
+      expect(layout.centerPercent).toBe(50);
+    });
+
+    it('ensures layoutEventArrow assigns self direction and nonzero width for same-lane notes', () => {
+      const selfNote: TraceEvent = {
+        id: 11,
+        traceKey: 'trace_123',
+        reporter: 'kestrel',
+        from: 'kestrel',
+        to: 'kestrel',
+        kind: 'note',
+        summary: 'Posted: purchase of $19.99; interchange earned $0.22',
+        at: '2026-11-02T10:00:06.000Z',
+      };
+      const layout = layoutEventArrow(selfNote, DEFAULT_LANES);
+      expect(layout.direction).toBe('self');
+      expect(layout.fromIndex).toBe(4);
+      expect(layout.toIndex).toBe(4);
+      expect(layout.leftPercent).toBe(80);
+      expect(layout.widthPercent).toBe(20);
+      expect(layout.widthPercent).toBeGreaterThan(0);
+    });
   });
 });

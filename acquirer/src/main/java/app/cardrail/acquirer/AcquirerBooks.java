@@ -59,6 +59,7 @@ public class AcquirerBooks {
     private final Clock clock;
     private final RestClient network;
     private final RestClient gateway;
+    private final RestClient meridian;
 
     public AcquirerBooks(AcquirerProperties props, JdbcClient jdbc, TransactionTemplate tx, TraceReporter trace, ObjectMapper json,
                          Clock clock) {
@@ -71,6 +72,7 @@ public class AcquirerBooks {
         this.clock = clock;
         this.network = CommonWeb.internalClient(props.networkUrl(), props.internalKey(), Duration.ofSeconds(15));
         this.gateway = CommonWeb.internalClient(props.gatewayUrl(), props.internalKey(), Duration.ofSeconds(5));
+        this.meridian = CommonWeb.internalClient(props.meridianUrl(), props.internalKey(), Duration.ofSeconds(15));
     }
 
     public Ledger ledger() {
@@ -97,7 +99,8 @@ public class AcquirerBooks {
     // ---- presenting: what merchants captured and refunded, and answers to chargebacks
 
     record ToPresent(String rrn, String kind, String status, long amountCents, long capturedCents, String authCode, String mid,
-                     String mcc, String tid, String bin, String last4, int mdrBps, String originalRrn, java.time.Instant createdAt) {}
+                     String mcc, String tid, String bin, String last4, int mdrBps, String originalRrn, java.time.Instant createdAt,
+                     String scheme) {}
 
     record ToRepresent(String disputeId, String rrn, long amountCents, String reasonCode, String authCode, String mid, String mcc,
                        String tid, String bin, String last4) {}
@@ -107,14 +110,16 @@ public class AcquirerBooks {
     record Result(String fileId, int accepted, List<Rejected> rejected) {}
 
     public void present() {
-        List<ToPresent> due = jdbc.sql("""
+        List<ToPresent> all = jdbc.sql("""
                 select a.rrn, a.kind, a.status, a.amount_cents, a.captured_cents, a.auth_code, m.mid, m.mcc, a.tid, a.bin, a.last4,
-                       m.mdr_bps, a.original_rrn, a.created_at
+                       m.mdr_bps, a.original_rrn, a.created_at, a.scheme
                 from authorisations a join merchants m on m.id = a.merchant_id
                 where a.presented_file is null
                   and ((a.kind = 'PURCHASE' and a.status = 'CAPTURED') or (a.kind = 'REFUND' and a.status = 'APPROVED'))
                 order by a.created_at limit 1000""")
                 .query(ToPresent.class).list();
+        submitToMeridian(all.stream().filter(p -> "MERIDIAN".equals(p.scheme())).toList());
+        List<ToPresent> due = all.stream().filter(p -> !"MERIDIAN".equals(p.scheme())).toList();
         List<ToRepresent> answers = jdbc.sql("""
                 select d.id as dispute_id, d.rrn, d.amount_cents, d.reason_code, a.auth_code, m.mid, m.mcc, a.tid, a.bin, a.last4
                 from disputes d join authorisations a on a.rrn = d.rrn join merchants m on m.id = d.merchant_id
@@ -182,6 +187,38 @@ public class AcquirerBooks {
             });
         }
         log.info("Clearing file {}: {} records, {} refused", fileId, records.size(), rejected.size());
+    }
+
+    /**
+     * Meridian cards: the day's sales and refunds go to Meridian in the same file format. Meridian pays the merchant
+     * itself, so nothing is booked here: Railpay Acquiring only processes them.
+     */
+    void submitToMeridian(List<ToPresent> due) {
+        if (due.isEmpty()) {
+            return;
+        }
+        LocalDate today = LocalDate.now(clock.withZone(ZoneOffset.UTC));
+        List<Record> records = new ArrayList<>();
+        for (ToPresent p : due) {
+            boolean sale = "PURCHASE".equals(p.kind());
+            records.add(new Record(sale ? Type.SALE : Type.CREDIT, props.institutionId(), "390001", p.rrn(), p.authCode(),
+                    sale ? p.capturedCents() : p.amountCents(), "840", p.createdAt().atZone(ZoneOffset.UTC).toLocalDate(), p.mcc(),
+                    p.mid(), p.tid(), p.bin(), p.last4(), 0, null, p.originalRrn(), null));
+        }
+        String fileId = "RPA-M-" + System.currentTimeMillis();
+        String file = ClearingFile.write(new ClearingFile.Header(fileId, props.institutionId(), "390001", today,
+                LocalDateTime.now(clock.withZone(ZoneOffset.UTC))), records);
+        Result result = meridian.post().uri("/internal/v1/submissions").contentType(MediaType.TEXT_PLAIN).body(file)
+                .retrieve().body(Result.class);
+        Map<String, String> rejected = new LinkedHashMap<>();
+        result.rejected().forEach(r -> rejected.put(r.rrn(), r.reason()));
+        for (ToPresent p : due) {
+            boolean sale = "PURCHASE".equals(p.kind());
+            jdbc.sql("update authorisations set presented_file = ?, presented_cents = ?, mdr_cents = 0, presentment_error = ? where rrn = ?")
+                    .params(fileId, sale ? p.capturedCents() : p.amountCents(), rejected.get(p.rrn()), p.rrn()).update();
+            trace.note(p.rrn(), Parties.ACQUIRER, Parties.MERIDIAN, rejected.containsKey(p.rrn()) ? "Submission refused: " + rejected.get(p.rrn())
+                    : "Submitted to Meridian, which pays the merchant itself", Map.of("file", fileId));
+        }
     }
 
     // ---- what Railnet sends us: chargebacks

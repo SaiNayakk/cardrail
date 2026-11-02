@@ -5,13 +5,17 @@ import java.util.Map;
 
 /**
  * Field 48 as a list of subelements, each a 2-digit tag, a 2-digit length and the value, as in Mastercard's
- * DE 48. Railnet uses tag 92 for the card security code (CVV2) on card-not-present payments, and 42 for the
- * e-commerce security level.
+ * DE 48. Railnet uses tag 92 for the card security code (CVV2) on card-not-present payments, 42 for the
+ * e-commerce security level (210 not authenticated, 212 authenticated), and 43 and 44 for step-up's proof.
  */
 public final class Subelements {
 
     public static final String CVV2 = "92";
     public static final String ECOMMERCE_SECURITY = "42";
+    /** The cardholder authentication value from the issuer's ACS, proof that step-up happened (like Visa's CAVV). */
+    public static final String AUTHENTICATION_VALUE = "43";
+    /** The directory server's id for that authentication. */
+    public static final String AUTHENTICATION_ID = "44";
 
     private Subelements() {
     }

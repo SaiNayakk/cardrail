@@ -15,6 +15,7 @@ public final class ResponseCode {
     public static final String EXPIRED_CARD = "54";
     public static final String INCORRECT_PIN = "55";
     public static final String NOT_PERMITTED_TO_CARDHOLDER = "57";
+    public static final String SUSPECTED_FRAUD = "59";
     public static final String EXCEEDS_LIMIT = "61";
     public static final String RESTRICTED_CARD = "62";
     public static final String EXCEEDS_FREQUENCY = "65";
@@ -45,6 +46,7 @@ public final class ResponseCode {
             case EXPIRED_CARD -> "Expired card";
             case INCORRECT_PIN -> "Incorrect PIN";
             case NOT_PERMITTED_TO_CARDHOLDER -> "Not permitted to cardholder";
+            case SUSPECTED_FRAUD -> "Suspected fraud";
             case EXCEEDS_LIMIT -> "Exceeds amount limit";
             case RESTRICTED_CARD -> "Restricted card";
             case EXCEEDS_FREQUENCY -> "Exceeds frequency limit";

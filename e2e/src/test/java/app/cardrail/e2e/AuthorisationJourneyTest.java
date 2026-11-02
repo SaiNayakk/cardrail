@@ -149,11 +149,12 @@ class AuthorisationJourneyTest {
     }
 
     @Test
-    @DisplayName("E2E-10: version 1 of the merchant API is still answered at its first address, and version 2 at its own")
+    @DisplayName("E2E-10: every version of the merchant API is answered at its own address, version 1 also at its first")
     void e2e10() {
         assertThat(edge.post("/api/railpay/payments", Map.of("amount", 100, "currency", "usd", "source", "tok_x")).status()).isEqualTo(401);
         assertThat(edge.post("/api/railpay/v2/payments", Map.of("amount", 100, "currency", "usd", "source", "tok_x")).status()).isEqualTo(401);
-        assertThat(edge.post("/api/railpay/v3/payments", Map.of()).status()).isEqualTo(404);
+        assertThat(edge.post("/api/railpay/v3/payments", Map.of("amount", 100, "currency", "usd", "source", "tok_x")).status()).isEqualTo(401);
+        assertThat(edge.post("/api/railpay/v4/payments", Map.of()).status()).isEqualTo(404);
     }
 
     private static String code(String card, String product) {

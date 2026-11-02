@@ -18,5 +18,8 @@ public record AcquirerProperties(
         String traceUrl,
         String internalKey,
         String networkUrl,
-        String gatewayUrl) {
+        String gatewayUrl,
+        String meridianHost,
+        int meridianPort,
+        String meridianUrl) {
 }

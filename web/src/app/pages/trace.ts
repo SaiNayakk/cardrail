@@ -115,26 +115,35 @@ import { SidePanel } from '../ui/side-panel';
                         (click)="selectEvent(arrow.event)"
                         [attr.aria-label]="'Inspect message: ' + arrow.label"
                       >
-                        <div class="arrow-shaft" [class.shaft-stand-in]="arrow.isStandIn">
-                          @if (arrow.direction === 'backward') {
-                            <svg class="arrowhead arrow-left" viewBox="0 0 10 10" aria-hidden="true">
-                              <polygon points="10,0 0,5 10,10" fill="currentColor" />
-                            </svg>
-                          }
-
-                          <span class="arrow-label-pill" [class.pill-stand-in]="arrow.isStandIn">
-                            @if (arrow.event.kind === 'iso8583') {
-                              <span class="mti-tag mono" [title]="arrow.mtiName || ''">{{ arrow.event.mti }}</span>
+                        @if (arrow.direction === 'self') {
+                          <div class="lane-marker-container">
+                            <span class="lane-marker-dot" aria-hidden="true"></span>
+                            <span class="arrow-label-pill pill-self" [class.pill-stand-in]="arrow.isStandIn">
+                              <span class="summary-text">{{ arrow.event.summary }}</span>
+                            </span>
+                          </div>
+                        } @else {
+                          <div class="arrow-shaft" [class.shaft-stand-in]="arrow.isStandIn">
+                            @if (arrow.direction === 'backward') {
+                              <svg class="arrowhead arrow-left" viewBox="0 0 10 10" aria-hidden="true">
+                                <polygon points="10,0 0,5 10,10" fill="currentColor" />
+                              </svg>
                             }
-                            <span class="summary-text">{{ arrow.event.summary }}</span>
-                          </span>
 
-                          @if (arrow.direction === 'forward') {
-                            <svg class="arrowhead arrow-right" viewBox="0 0 10 10" aria-hidden="true">
-                              <polygon points="0,0 10,5 0,10" fill="currentColor" />
-                            </svg>
-                          }
-                        </div>
+                            <span class="arrow-label-pill" [class.pill-stand-in]="arrow.isStandIn">
+                              @if (arrow.event.kind === 'iso8583') {
+                                <span class="mti-tag mono" [title]="arrow.mtiName || ''">{{ arrow.event.mti }}</span>
+                              }
+                              <span class="summary-text">{{ arrow.event.summary }}</span>
+                            </span>
+
+                            @if (arrow.direction === 'forward') {
+                              <svg class="arrowhead arrow-right" viewBox="0 0 10 10" aria-hidden="true">
+                                <polygon points="0,0 10,5 0,10" fill="currentColor" />
+                              </svg>
+                            }
+                          </div>
+                        }
                       </button>
                     </div>
                   </div>
@@ -163,9 +172,14 @@ import { SidePanel } from '../ui/side-panel';
                 <span class="badge">{{ arrow.event.kind === 'iso8583' ? 'ISO 8583' : 'Note' }}</span>
               </div>
               <div class="step-routing">
-                <span class="party-tag">{{ arrow.fromName }}</span>
-                <span class="routing-arrow">&rarr;</span>
-                <span class="party-tag">{{ arrow.toName }}</span>
+                @if (arrow.direction === 'self') {
+                  <span class="party-tag">{{ arrow.fromName }}</span>
+                  <span class="muted small">(internal)</span>
+                } @else {
+                  <span class="party-tag">{{ arrow.fromName }}</span>
+                  <span class="routing-arrow">&rarr;</span>
+                  <span class="party-tag">{{ arrow.toName }}</span>
+                }
               </div>
               <div class="step-summary">
                 @if (arrow.event.kind === 'iso8583' && arrow.event.mti) {
@@ -371,6 +385,41 @@ import { SidePanel } from '../ui/side-panel';
       align-items: center;
       justify-content: center;
       transition: background-color var(--duration-fast) var(--ease-out);
+    }
+
+    .lane-marker-container {
+      width: 100%;
+      height: 100%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      position: relative;
+    }
+
+    .lane-marker-dot {
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+      background-color: var(--accent);
+      border: 2px solid var(--surface);
+      box-shadow: 0 0 0 1px var(--line-strong);
+      position: absolute;
+      left: 50%;
+      top: 50%;
+      transform: translate(-50%, -50%);
+      z-index: 2;
+      transition: transform var(--duration-fast) var(--ease-out),
+                  background-color var(--duration-fast) var(--ease-out);
+    }
+
+    .arrow-bar-btn:hover .lane-marker-dot,
+    .arrow-bar-btn:focus-visible .lane-marker-dot {
+      transform: translate(-50%, -50%) scale(1.3);
+      background-color: var(--ink);
+    }
+
+    .pill-self {
+      z-index: 3;
     }
 
     .arrow-bar-btn:hover .arrow-shaft,

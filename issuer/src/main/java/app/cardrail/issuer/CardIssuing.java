@@ -55,6 +55,25 @@ public class CardIssuing {
         return new IssuedCard(cardholder, account, card, pan, expiry, keys.cvv2(pan, expiry));
     }
 
+    /**
+     * A new card on the same account for one lost or stolen: a new number and expiry, issued inactive until its
+     * cardholder activates it. The account, its money and its history stay.
+     */
+    @Transactional
+    public IssuedCard replace(UUID accountId, UUID lostCardId) {
+        String bin = store.account(accountId).map(a -> "DEBIT".equals(a.kind()) ? DEBIT_BIN : CREDIT_BIN).orElseThrow();
+        String pan;
+        do {
+            pan = pan(bin + String.format("%09d", RANDOM.nextInt(1_000_000_000)));
+        } while (store.cardByPanHash(keys.panHash(pan)).isPresent());
+        YearMonth expires = YearMonth.now(clock.withZone(ZoneOffset.UTC)).plusYears(4);
+        String expiry = String.format("%02d%02d", expires.getYear() % 100, expires.getMonthValue());
+        UUID card = store.createCard(accountId, keys.panHash(pan), keys.encrypt(pan), pan, expiry, "INACTIVE", null);
+        store.markReplacement(card, lostCardId);
+        UUID cardholder = store.account(accountId).orElseThrow().cardholderId();
+        return new IssuedCard(cardholder, accountId, card, pan, expiry, keys.cvv2(pan, expiry));
+    }
+
     /** A valid card number from its first 15 digits. */
     public static String pan(String fifteen) {
         return fifteen + Luhn.checkDigit(fifteen);

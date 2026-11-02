@@ -39,6 +39,24 @@ final class Edge {
         return post(path, body, Map.of());
     }
 
+    /** As the signed-in cardholder. */
+    Response get(String path, String bearer) {
+        return send(HttpRequest.newBuilder(URI.create(base + path)).GET(), Map.of("Authorization", "Bearer " + bearer));
+    }
+
+    Response post(String path, Object body, String bearer) {
+        return post(path, body, Map.of("Authorization", "Bearer " + bearer));
+    }
+
+    Response put(String path, Object body, String bearer) {
+        try {
+            return send(HttpRequest.newBuilder(URI.create(base + path)).header("Content-Type", "application/json")
+                    .PUT(HttpRequest.BodyPublishers.ofString(JSON.writeValueAsString(body))), Map.of("Authorization", "Bearer " + bearer));
+        } catch (IOException e) {
+            throw new IllegalStateException(e);
+        }
+    }
+
     Response post(String path, Object body, Map<String, String> headers) {
         try {
             return send(HttpRequest.newBuilder(URI.create(base + path))

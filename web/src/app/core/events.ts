@@ -11,6 +11,10 @@ export const EVENT_TYPE_NAMES: Record<string, string> = {
   'refund.succeeded': 'Refund succeeded',
   'refund.failed': 'Refund failed',
   'refund.pending': 'Refund pending',
+  'dispute.created': 'Dispute created',
+  'dispute.won': 'Dispute won',
+  'dispute.lost': 'Dispute lost',
+  'payout.paid': 'Payout paid',
 };
 
 /** Formats a webhook event type (e.g. "payment.captured") into plain words (e.g. "Payment captured"). */

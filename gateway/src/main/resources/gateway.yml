@@ -29,6 +29,8 @@ server:
 gateway:
   vault-url: ${GATEWAY_VAULT_URL:http://127.0.0.1:8202}
   acquirer-url: ${GATEWAY_ACQUIRER_URL:http://127.0.0.1:8203}
+  # Railnet's directory server, for step-up
+  network-url: ${GATEWAY_NETWORK_URL:http://127.0.0.1:8204}
   # Longer than the acquirer waits for the network (5 s), so its answer always comes first.
   acquirer-timeout: ${GATEWAY_ACQUIRER_TIMEOUT:8s}
   key-mode: ${GATEWAY_KEY_MODE:test}

@@ -44,12 +44,16 @@ public class Authoriser {
 
     private final IssuerStore store;
     private final CardKeys keys;
+    private final Risk risk;
+    private final Acs acs;
     private final TransactionTemplate tx;
     private final Clock clock;
 
-    public Authoriser(IssuerStore store, CardKeys keys, TransactionTemplate tx, Clock clock) {
+    public Authoriser(IssuerStore store, CardKeys keys, Risk risk, Acs acs, TransactionTemplate tx, Clock clock) {
         this.store = store;
         this.keys = keys;
+        this.risk = risk;
+        this.acs = acs;
         this.tx = tx;
         this.clock = clock;
     }
@@ -97,7 +101,15 @@ public class Authoriser {
         if (refusal != null) {
             return decline(request, card, kind, amount, refusal);
         }
-        return tx.execute(status -> {
+        // the cardholder's rules, the pace of spending, the fraud score; and whether they already confirmed it
+        boolean authenticated = authenticated(card, pan, amount.cents(), request);
+        Risk.Verdict verdict = risk.assess(card.id(), request, amount.cents(), authenticated);
+        if (verdict.code() != null) {
+            IsoMessage answer = decline(request, card, kind, amount, verdict.code());
+            store.annotate(request.get(32), request.get(37), verdict.score(), verdict.reasons(), authenticated);
+            return answer;
+        }
+        IsoMessage decided = tx.execute(status -> {
             Account account = store.lockAccount(card.accountId());
             long available = account.availableCents(store.heldCents(account.id()));
             boolean approved = amount.cents() <= available;
@@ -107,6 +119,19 @@ public class Authoriser {
                     approved ? authCode() : null, "ISSUER", approved ? "APPROVED" : "DECLINED", approved ? amount.cents() : 0));
             return first(request);
         });
+        store.annotate(request.get(32), request.get(37), verdict.score(), verdict.reasons(), authenticated);
+        return decided;
+    }
+
+    /** Field 48 says the cardholder was authenticated (security level 212), with a value only our ACS could have made. */
+    private boolean authenticated(Card card, String pan, long cents, IsoMessage request) {
+        if (!request.has(48)) {
+            return false;
+        }
+        var subelements = Subelements.decode(request.get(48));
+        return "212".equals(subelements.get(Subelements.ECOMMERCE_SECURITY))
+                && acs.verify(card.id(), pan, cents, subelements.get(Subelements.AUTHENTICATION_ID),
+                subelements.get(Subelements.AUTHENTICATION_VALUE));
     }
 
     /** An 0120: the network approved this for us while we couldn't answer. Recorded and held, whatever the balance. */

@@ -66,9 +66,9 @@ public class Reversing {
                     "only an approved payment that isn't captured can be voided (this one is " + auth.status().toLowerCase() + ")");
         }
         IsoMessage reversal = reversal("0400", auth);
-        trace.iso(rrn, Parties.ACQUIRER, Parties.RAILNET, reversal);
+        trace.iso(rrn, Parties.ACQUIRER, party(auth), reversal);
         try {
-            IsoMessage response = network.link().send(reversal, props.networkTimeout())
+            IsoMessage response = network.link(auth.scheme()).send(reversal, props.networkTimeout())
                     .get(props.networkTimeout().toMillis() + 500, TimeUnit.MILLISECONDS);
             if (APPROVED.equals(response.get(39)) || "25".equals(response.get(39))) {
                 store.setStatus(rrn, "REVERSED");
@@ -111,9 +111,9 @@ public class Reversing {
         for (AcquirerStore.Reversal owed : store.dueReversals(20)) {
             Authorisation auth = store.authorisation(owed.rrn()).orElseThrow();
             IsoMessage advice = reversal("0420", auth);
-            trace.iso(owed.rrn(), Parties.ACQUIRER, Parties.RAILNET, advice);
+            trace.iso(owed.rrn(), Parties.ACQUIRER, party(auth), advice);
             try {
-                IsoMessage ack = network.link().send(advice, props.networkTimeout())
+                IsoMessage ack = network.link(auth.scheme()).send(advice, props.networkTimeout())
                         .get(props.networkTimeout().toMillis() + 500, TimeUnit.MILLISECONDS);
                 if (APPROVED.equals(ack.get(39))) {
                     tx.executeWithoutResult(s -> {
@@ -133,6 +133,10 @@ public class Reversing {
                 return;   // the network is unreachable: the rest wait for the next round
             }
         }
+    }
+
+    private static String party(Authorisation auth) {
+        return "MERIDIAN".equals(auth.scheme()) ? Parties.MERIDIAN : Parties.RAILNET;
     }
 
     /**

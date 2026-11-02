@@ -1,0 +1,60 @@
+# Meridian, the closed loop. Named closedloop.yml (not application.yml) so services can share one JVM host.
+spring:
+  application:
+    name: closedloop
+  datasource:
+    url: ${MERIDIAN_DB_URL:jdbc:postgresql://localhost:5432/cardrail?currentSchema=meridian}
+    username: ${MERIDIAN_DB_USER:cardrail}
+    password: ${MERIDIAN_DB_PASSWORD:cardrail}
+    hikari:
+      maximum-pool-size: 4
+      pool-name: meridian
+      connection-timeout: 2000
+  flyway:
+    locations: classpath:db/closedloop
+    schemas: meridian
+    default-schema: meridian
+  jackson:
+    default-property-inclusion: non_null
+  jmx:
+    enabled: false
+
+server:
+  port: ${MERIDIAN_PORT:8208}
+  address: ${MERIDIAN_BIND:127.0.0.1}
+  tomcat:
+    threads:
+      max: 16
+
+meridian:
+  institution-id: "390001"
+  iso-bind: ${MERIDIAN_ISO_BIND:127.0.0.1}
+  iso-port: ${MERIDIAN_ISO_PORT:9208}
+  # one key (base64, 32 bytes): card numbers encrypted, hashed, and card security codes derived from it
+  key: ${MERIDIAN_KEY:}
+  gateway-url: ${MERIDIAN_GATEWAY_URL:http://127.0.0.1:8201}
+  trace-url: ${TRACE_URL:}
+  internal-key: ${CARDRAIL_INTERNAL_KEY:}
+  demo: ${CARDRAIL_DEMO:false}
+  # how often Meridian pays its merchants what was submitted
+  payout-every: ${MERIDIAN_PAYOUT_EVERY:5m}
+
+cardrail:
+  internal-key: ${CARDRAIL_INTERNAL_KEY:}
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,prometheus
+  endpoint:
+    health:
+      probes:
+        enabled: true
+
+logging:
+  structured:
+    format:
+      console: ${LOG_FORMAT:}
+  pattern:
+    correlation: "[%X{requestId:-}] "

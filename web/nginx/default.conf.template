@@ -83,11 +83,38 @@ server {
         proxy_pass $network;
         add_header Cache-Control "no-store" always;
     }
+    location = /api/books/meridian {
+        set $meridian http://${NETWORK}:8208;
+        rewrite ^ /v1/books break;
+        proxy_pass $meridian;
+        add_header Cache-Control "no-store" always;
+    }
+    location = /api/meridian/test-cards {
+        set $meridian http://${NETWORK}:8208;
+        rewrite ^ /v1/test-cards break;
+        proxy_pass $meridian;
+        add_header Cache-Control "no-store" always;
+    }
     location = /api/books/railpay-acquiring {
         set $acquirer http://${ACQUIRING}:8203;
         rewrite ^ /v1/books break;
         proxy_pass $acquirer;
         add_header Cache-Control "no-store" always;
+    }
+
+    # The Kestrel Bank cardholder app's API
+    location /api/cardholder/ {
+        set $issuer http://${ISSUING}:8205;
+        rewrite ^/api/cardholder/(.*)$ /v1/cardholder/$1 break;
+        proxy_pass $issuer;
+        proxy_set_header Authorization $http_authorization;
+        add_header Cache-Control "no-store" always;
+    }
+
+    # Kestrel Bank's step-up page, shown to the shopper in a frame on the shop's page. It sets its own headers.
+    location /acs/ {
+        set $issuer http://${ISSUING}:8205;
+        proxy_pass $issuer;
     }
 
     # A cardholder disputes a purchase with Kestrel Bank (demo only: anyone may, for a test card)

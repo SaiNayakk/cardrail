@@ -101,15 +101,18 @@ class AcquirerController {
     record AuthoriseRequest(@NotBlank String mid, String tid, @Pattern(regexp = "[0-9]{12,19}") String pan,
                             @Pattern(regexp = "[0-9]{4}") String expiry, @Pattern(regexp = "[0-9]{3,4}") String cvv2,
                             @Min(1) @Max(99_999_999_99L) long amountCents, @Pattern(regexp = "[A-Z]{3}") String currency,
-                            @Pattern(regexp = "[A-Za-z0-9]{12}") String rrn) {}
+                            @Pattern(regexp = "[A-Za-z0-9]{12}") String rrn,
+                            @Pattern(regexp = "acs_[A-Za-z0-9]{1,40}") String authenticationId,
+                            @Pattern(regexp = "[A-Za-z0-9+/=]{28}") String authenticationValue) {}
 
     @PostMapping("/internal/v1/authorisations")
     Authorising.Result authorise(@Valid @RequestBody AuthoriseRequest r) {
         var result = authorising.authorise(new Authorising.Request(r.mid(), r.tid(), r.pan(), r.expiry(), r.cvv2(),
-                r.amountCents(), r.currency(), r.rrn(), null));
+                r.amountCents(), r.currency(), r.rrn(), null, r.authenticationId(), r.authenticationValue()));
         String summary = switch (result.status()) {
             case "APPROVED" -> "Approved, code " + result.authCode();
-            case "DECLINED" -> "Declined: " + result.responseText();
+            case "DECLINED" -> "1A".equals(result.responseCode()) ? "The card's bank wants the cardholder to confirm it (step-up)"
+                    : "Declined: " + result.responseText();
             default -> "Outcome unknown: " + result.responseText();
         };
         trace.note(r.rrn(), Parties.ACQUIRER, Parties.GATEWAY, summary, Map.of("status", result.status()));

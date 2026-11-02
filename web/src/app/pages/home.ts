@@ -43,6 +43,22 @@ import { PartyDiagram } from '../ui/party-diagram';
         </div>
 
         <div class="card action-card">
+          <h2>Shop dashboard</h2>
+          <p class="muted small">
+            Review settled payouts, merchant fees, chargebacks, and submit evidence for cardholder disputes.
+          </p>
+          <a routerLink="/dashboard" class="btn btn-secondary">Shop dashboard</a>
+        </div>
+
+        <div class="card action-card">
+          <h2>Books</h2>
+          <p class="muted small">
+            Inspect double-entry balanced ledger accounts across the issuing bank, network, and acquirer.
+          </p>
+          <a routerLink="/books" class="btn btn-secondary">Inspect books</a>
+        </div>
+
+        <div class="card action-card">
           <h2>Recent traces</h2>
           <p class="muted small">
             Inspect previous payment journeys and review raw ISO 8583 data elements exchanged between parties.

@@ -1,6 +1,7 @@
 package app.cardrail.host;
 
 import app.cardrail.acquirer.AcquirerApplication;
+import app.cardrail.closedloop.MeridianApplication;
 import app.cardrail.demoshop.DemoShopApplication;
 import app.cardrail.gateway.GatewayApplication;
 import app.cardrail.issuer.IssuerApplication;
@@ -24,7 +25,7 @@ import java.util.function.Supplier;
  *
  * <ul>
  *   <li>{@code acquiring}: the acquirer, the vault, the gateway, and the demo shop that pays through it</li>
- *   <li>{@code network}: the trace service and Railnet</li>
+ *   <li>{@code network}: the trace service, Railnet, and Meridian (the closed loop; ADR-005 accepts the shared JVM)</li>
  *   <li>{@code issuing}: Kestrel Bank</li>
  *   <li>{@code cell}: all of them, as the other cell's standby</li>
  * </ul>
@@ -37,10 +38,10 @@ public final class Host {
 
     static final Map<String, List<Supplier<SpringApplicationBuilder>>> GROUPS = Map.of(
             "issuing", List.of(IssuerApplication::builder),
-            "network", List.of(TraceApplication::builder, NetworkApplication::builder),
+            "network", List.of(TraceApplication::builder, NetworkApplication::builder, MeridianApplication::builder),
             "acquiring", List.of(AcquirerApplication::builder, VaultApplication::builder, GatewayApplication::builder,
                     DemoShopApplication::builder),
-            "cell", List.of(TraceApplication::builder, IssuerApplication::builder, NetworkApplication::builder,
+            "cell", List.of(TraceApplication::builder, IssuerApplication::builder, NetworkApplication::builder, MeridianApplication::builder,
                     AcquirerApplication::builder, VaultApplication::builder, GatewayApplication::builder,
                     DemoShopApplication::builder));
 

@@ -3,8 +3,16 @@ import { Injectable, inject } from '@angular/core';
 import { firstValueFrom } from 'rxjs';
 import {
   CheckoutRequest,
+  Dispute,
+  DisputeEvidenceRequest,
+  DisputeListResponse,
+  IssuerDisputeRequest,
+  IssuerDisputeResponse,
+  PartyBook,
   Payment,
   PaymentListResponse,
+  Payout,
+  PayoutListResponse,
   Refund,
   RefundRequest,
   ShopConfig,
@@ -53,6 +61,13 @@ export class Api {
     return this.post<Payment>('/api/shop/v1/checkout', req);
   }
 
+  confirmPayment(paymentId: string): Promise<Payment> {
+    return this.post<Payment>(
+      `/api/shop/v1/payments/${encodeURIComponent(paymentId)}/confirm`,
+      {},
+    );
+  }
+
   getPayments(): Promise<PaymentListResponse> {
     return this.get<PaymentListResponse>('/api/shop/v1/payments');
   }
@@ -75,5 +90,35 @@ export class Api {
 
   getTrace(reference: string): Promise<TraceDetail> {
     return this.get<TraceDetail>(`/api/trace/traces/${encodeURIComponent(reference)}`);
+  }
+
+  getPayouts(): Promise<PayoutListResponse> {
+    return this.get<PayoutListResponse>('/api/shop/v1/payouts');
+  }
+
+  getDisputes(): Promise<DisputeListResponse> {
+    return this.get<DisputeListResponse>('/api/shop/v1/disputes');
+  }
+
+  submitDisputeEvidence(disputeId: string, req: DisputeEvidenceRequest): Promise<Dispute> {
+    return this.post<Dispute>(
+      `/api/shop/v1/disputes/${encodeURIComponent(disputeId)}/evidence`,
+      req,
+    );
+  }
+
+  acceptDispute(disputeId: string): Promise<Dispute> {
+    return this.post<Dispute>(
+      `/api/shop/v1/disputes/${encodeURIComponent(disputeId)}/accept`,
+      {},
+    );
+  }
+
+  createIssuerDispute(req: IssuerDisputeRequest): Promise<IssuerDisputeResponse> {
+    return this.post<IssuerDisputeResponse>('/api/issuer/disputes', req);
+  }
+
+  getPartyBook(party: string): Promise<PartyBook> {
+    return this.get<PartyBook>(`/api/books/${encodeURIComponent(party)}`);
   }
 }

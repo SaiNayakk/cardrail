@@ -17,7 +17,13 @@ class TestCards implements ApplicationRunner {
 
     private static final Logger log = LoggerFactory.getLogger(TestCards.class);
 
-    record TestCard(String first15, String kind, long balanceCents, Long limitCents, String expiry, String status, String label) {}
+    record TestCard(String first15, String kind, long balanceCents, Long limitCents, String expiry, String status, String label,
+                    boolean stepUp) {
+
+        TestCard(String first15, String kind, long balanceCents, Long limitCents, String expiry, String status, String label) {
+            this(first15, kind, balanceCents, limitCents, expiry, status, label, false);
+        }
+    }
 
     static final List<TestCard> CARDS = List.of(
             new TestCard("286001000000001", "DEBIT", 500_000, null, "3012", "ACTIVE", "Debit card with $5,000: approved"),
@@ -25,18 +31,22 @@ class TestCards implements ApplicationRunner {
             new TestCard("286001000000003", "DEBIT", 100_000, null, "3012", "BLOCKED", "Blocked by the cardholder: declined (restricted card)"),
             new TestCard("286001000000004", "DEBIT", 100_000, null, "3012", "LOST", "Reported lost: declined (lost card)"),
             new TestCard("286001000000005", "DEBIT", 100_000, null, "2501", "ACTIVE", "Expired in January 2025: declined (expired card)"),
-            new TestCard("286002000000001", "CREDIT", 0, 200_000L, "3012", "ACTIVE", "Credit card with a $2,000 limit: approved"));
+            new TestCard("286002000000001", "CREDIT", 0, 200_000L, "3012", "ACTIVE", "Credit card with a $2,000 limit: approved"),
+            new TestCard("286001000000006", "DEBIT", 500_000, null, "3012", "ACTIVE",
+                    "Debit card that asks you to confirm each online payment in the Kestrel Bank app (step-up)", true));
 
     private final IssuerProperties props;
     private final IssuerStore store;
     private final CardIssuing issuing;
     private final CardKeys keys;
+    private final Risk risk;
 
-    TestCards(IssuerProperties props, IssuerStore store, CardIssuing issuing, CardKeys keys) {
+    TestCards(IssuerProperties props, IssuerStore store, CardIssuing issuing, CardKeys keys, Risk risk) {
         this.props = props;
         this.store = store;
         this.issuing = issuing;
         this.keys = keys;
+        this.risk = risk;
     }
 
     @Override
@@ -47,10 +57,18 @@ class TestCards implements ApplicationRunner {
         int made = 0;
         for (TestCard card : CARDS) {
             String pan = CardIssuing.pan(card.first15());
-            if (store.cardByPanHash(keys.panHash(pan)).isEmpty()) {
-                issuing.open("Test cardholder", card.kind(), card.balanceCents(), card.limitCents(), pan, card.expiry(),
-                        card.status(), card.label());
+            var existing = store.cardByPanHash(keys.panHash(pan));
+            java.util.UUID id = existing.isPresent() ? existing.get().id()
+                    : issuing.open("Test cardholder", card.kind(), card.balanceCents(), card.limitCents(), pan, card.expiry(),
+                            card.status(), card.label()).cardId();
+            if (existing.isEmpty()) {
                 made++;
+            }
+            // everyone shares these cards, so per-person signals don't apply; the step-up card always asks
+            Risk.Controls c = risk.controls(id);
+            if (!c.shared() || c.stepUpAlways() != card.stepUp()) {
+                risk.setControls(id, new Risk.Controls(c.onlineEnabled(), c.singleLimitCents(), c.dailyLimitCents(), c.blockedMccs(),
+                        card.stepUp(), true));
             }
         }
         if (made > 0) {

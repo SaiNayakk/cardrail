@@ -44,6 +44,7 @@ network:
       stand-in-max-cents: 10000
       stand-in-daily-count: 3
       stand-in-daily-cents: 20000
+      acs-url: ${NETWORK_KESTREL_ACS_URL:http://127.0.0.1:8205}
   trace-url: ${TRACE_URL:}
   internal-key: ${CARDRAIL_INTERNAL_KEY:}
 

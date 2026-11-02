@@ -21,6 +21,7 @@
     <dependency><groupId>app.cardrail</groupId><artifactId>demoshop</artifactId><version>${project.version}</version></dependency>
     <dependency><groupId>app.cardrail</groupId><artifactId>network</artifactId><version>${project.version}</version></dependency>
     <dependency><groupId>app.cardrail</groupId><artifactId>trace</artifactId><version>${project.version}</version></dependency>
+    <dependency><groupId>app.cardrail</groupId><artifactId>closedloop</artifactId><version>${project.version}</version></dependency>
     <dependency><groupId>app.cardrail</groupId><artifactId>issuer</artifactId><version>${project.version}</version></dependency>
   </dependencies>
 

@@ -76,6 +76,15 @@ public class Payments {
     }
 
     public Payment authorise(Merchant merchant, long amountCents, String currency, String token, String description, boolean capture) {
+        return authorise(merchant, amountCents, currency, token, description, capture, false);
+    }
+
+    /**
+     * @param stepUp the caller can show the shopper a step-up challenge (API v3): if the card's bank asks for one, the
+     *               payment waits as REQUIRES_ACTION instead of being declined
+     */
+    public Payment authorise(Merchant merchant, long amountCents, String currency, String token, String description, boolean capture,
+                             boolean stepUp) {
         if (!"usd".equalsIgnoreCase(currency)) {
             throw ApiException.invalid("unsupported_currency", "Railpay takes payments in usd");
         }
@@ -93,6 +102,18 @@ public class Payments {
                 details("merchant", merchant.name(), "payment", id, "card", "**** " + card.pan().substring(card.pan().length() - 4),
                         "capture", capture ? "at once" : "later"));
 
+        Outcome outcome = send(merchant, id, rrn, card, amountCents, null, null);
+        if (stepUp && "DECLINED".equals(outcome.status()) && outcome.result() != null && "1A".equals(outcome.result().responseCode())) {
+            return startStepUp(merchant, id, rrn, card, amountCents);
+        }
+        return settle(merchant, id, capture, outcome);
+    }
+
+    record Outcome(String status, String reason, AcquirerResult result) {}
+
+    /** One authorisation through the acquirer, with the step-up proof when there is one. */
+    private Outcome send(Merchant merchant, String id, String rrn, Revealed card, long amountCents, String authenticationId,
+                         String authenticationValue) {
         Map<String, Object> request = new LinkedHashMap<>();
         request.put("mid", merchant.acquirerMid());
         request.put("pan", card.pan());
@@ -103,48 +124,121 @@ public class Payments {
         request.put("amountCents", amountCents);
         request.put("currency", "USD");
         request.put("rrn", rrn);
-        trace.note(rrn, Parties.GATEWAY, Parties.ACQUIRER, "Authorise " + dollars(amountCents),
+        if (authenticationValue != null) {
+            request.put("authenticationId", authenticationId);
+            request.put("authenticationValue", authenticationValue);
+        }
+        trace.note(rrn, Parties.GATEWAY, Parties.ACQUIRER, "Authorise " + dollars(amountCents) + (authenticationValue != null ? ", confirmed by the cardholder" : ""),
                 details("mid", merchant.acquirerMid(), "reference", rrn));
-
-        String status;
-        String reason = null;
-        AcquirerResult result = null;
         try {
-            result = clients.acquirer().post().uri("/internal/v1/authorisations").body(request).retrieve().body(AcquirerResult.class);
-            status = switch (result.status()) {
+            AcquirerResult result = clients.acquirer().post().uri("/internal/v1/authorisations").body(request).retrieve().body(AcquirerResult.class);
+            String status = switch (result.status()) {
                 case "APPROVED" -> "AUTHORISED";
                 case "DECLINED" -> "DECLINED";
                 default -> "UNKNOWN";
             };
-            if (!"AUTHORISED".equals(status)) {
-                reason = result.responseText();
-            }
+            String reason = "AUTHORISED".equals(status) ? null
+                    : "1A".equals(result.responseCode()) ? "The card's bank wants the cardholder to confirm this payment" : result.responseText();
+            return new Outcome(status, reason, result);
         } catch (RestClientException e) {
             // We don't know if the acquirer sent it on: money may be held. Never call it declined.
             log.warn("Payment {} ({}): no answer from the acquirer: {}", id, rrn, e.getMessage());
-            status = "UNKNOWN";
-            reason = "No answer from the acquirer";
+            return new Outcome("UNKNOWN", "No answer from the acquirer", null);
         }
-        AcquirerResult answered = result;
-        String finalStatus = status;
-        String finalReason = reason;
+    }
+
+    /** Records how an authorisation ended, tells the merchant, and captures at once if asked to. */
+    private Payment settle(Merchant merchant, String id, boolean capture, Outcome outcome) {
+        AcquirerResult answered = outcome.result();
         tx.executeWithoutResult(s -> {
             jdbc.sql("""
                     update payments set status = ?, auth_code = ?, response_code = ?, decline_reason = ?, updated_at = now()
                     where id = ?""")
-                    .params(finalStatus, answered == null ? null : answered.authCode(), answered == null ? null : answered.responseCode(),
-                            finalReason, id)
+                    .params(outcome.status(), answered == null ? null : answered.authCode(), answered == null ? null : answered.responseCode(),
+                            outcome.reason(), id)
                     .update();
-            if (!"UNKNOWN".equals(finalStatus) && !(capture && "AUTHORISED".equals(finalStatus))) {
-                webhooks.emit(merchant, "payment." + finalStatus.toLowerCase(), view(merchant.id(), id));
+            if (!"UNKNOWN".equals(outcome.status()) && !(capture && "AUTHORISED".equals(outcome.status()))) {
+                webhooks.emit(merchant, "payment." + outcome.status().toLowerCase(), view(merchant.id(), id));
             }
         });
-        if (capture && "AUTHORISED".equals(status)) {
+        if (capture && "AUTHORISED".equals(outcome.status())) {
             return capture(merchant, id, null);
         }
         Payment payment = byId(merchant.id(), id).orElseThrow();
-        reply(payment, "Payment " + status.toLowerCase() + (reason == null ? "" : ": " + reason));
+        reply(payment, "Payment " + outcome.status().toLowerCase() + (outcome.reason() == null ? "" : ": " + outcome.reason()));
         return payment;
+    }
+
+    record DirectoryStarted(String issuerId, String id, String status, String challengePath) {}
+
+    record DirectoryResult(String id, String status, String value) {}
+
+    /** The card's bank wants the cardholder to confirm: ask it, through Railnet's directory, and wait for the shopper. */
+    private Payment startStepUp(Merchant merchant, String id, String rrn, Revealed card, long amountCents) {
+        DirectoryStarted started;
+        try {
+            started = clients.directory().post().uri("/internal/v1/directory/authentications")
+                    .body(Map.of("pan", card.pan(), "expiry", card.expiry(), "amountCents", amountCents, "merchant", merchant.name(),
+                            "reference", rrn))
+                    .retrieve().body(DirectoryStarted.class);
+        } catch (RestClientException e) {
+            log.warn("Payment {}: step-up couldn't be started: {}", id, e.getMessage());
+            return settle(merchant, id, false, new Outcome("DECLINED", "The card's bank wants the cardholder to confirm, and couldn't be reached",
+                    null));
+        }
+        jdbc.sql("""
+                update payments set status = 'REQUIRES_ACTION', authentication_issuer = ?, authentication_id = ?, challenge_path = ?,
+                       response_code = '1A', updated_at = now() where id = ?""")
+                .params(started.issuerId(), started.id(), started.challengePath(), id).update();
+        trace.note(rrn, Parties.GATEWAY, Parties.MERCHANT, "The cardholder must confirm it: show them their bank's page", Map.of("payment", id));
+        return byId(merchant.id(), id).orElseThrow();
+    }
+
+    /**
+     * After the shopper confirmed with their bank: the payment is authorised again, with the proof and a new
+     * reference (the first attempt was answered, and its answer stands). Declined if the cardholder said no.
+     */
+    public Payment confirm(Merchant merchant, String id) {
+        Payment payment = byId(merchant.id(), id).orElseThrow(() -> ApiException.notFound("payment " + id));
+        if (!"REQUIRES_ACTION".equals(payment.status())) {
+            return payment;   // confirmed already, or never needed it: the same answer again
+        }
+        record Step(String issuer, String authId) {}
+        Step step = jdbc.sql("select authentication_issuer as issuer, authentication_id as auth_id from payments where id = ?").param(id).query(Step.class).single();
+        DirectoryResult result;
+        try {
+            result = clients.directory().get().uri("/internal/v1/directory/authentications/{i}/{a}", step.issuer(), step.authId())
+                    .retrieve().body(DirectoryResult.class);
+        } catch (RestClientException e) {
+            throw unavailable();
+        }
+        if ("PENDING".equals(result.status())) {
+            throw new ApiException(HttpStatus.CONFLICT, "not_confirmed_yet", "the cardholder hasn't confirmed this payment yet");
+        }
+        if (!"Y".equals(result.status())) {
+            return settle(merchant, id, false, new Outcome("DECLINED", "The cardholder didn't confirm the payment", null));
+        }
+        Revealed card;
+        try {
+            card = clients.vault().post().uri("/internal/v1/cards/{id}/reveal", payment.cardRef())
+                    .body(Map.of("merchantId", merchant.id())).retrieve().body(Revealed.class);
+        } catch (RestClientException e) {
+            throw unavailable();
+        }
+        String rrn = nextRrn();
+        // claim the confirmation: two confirms at once must not authorise twice
+        if (jdbc.sql("update payments set first_rrn = rrn, rrn = ?, status = 'PENDING', updated_at = now() where id = ? and status = 'REQUIRES_ACTION'")
+                .params(rrn, id).update() == 0) {
+            return byId(merchant.id(), id).orElseThrow();
+        }
+        trace.note(rrn, Parties.MERCHANT, Parties.GATEWAY, "The cardholder confirmed: authorise " + dollars(payment.amountCents()) + " again",
+                details("payment", id, "firstAttempt", payment.rrn()));
+        return settle(merchant, id, payment.capture(), send(merchant, id, rrn, card, payment.amountCents(), step.authId(), result.value()));
+    }
+
+    /** Where the shopper confirms: the card's bank's page, for a payment waiting on step-up. */
+    public java.util.Optional<String> challengePath(String id) {
+        return jdbc.sql("select challenge_path from payments where id = ? and status = 'REQUIRES_ACTION'").param(id).query(String.class).optional();
     }
 
     /** Takes the money for an authorised payment: all of it, or less (the rest of the hold is released at clearing). */
@@ -372,6 +466,11 @@ public class Payments {
     public PaymentView view(String merchantId, String id) {
         Payment p = byId(merchantId, id).orElseThrow(() -> ApiException.notFound("payment " + id));
         return PaymentView.of(p, refunds(id));
+    }
+
+    public PaymentView viewV3(String merchantId, String id) {
+        Payment p = byId(merchantId, id).orElseThrow(() -> ApiException.notFound("payment " + id));
+        return PaymentView.v3(p, refunds(id), challengePath(id).orElse(null));
     }
 
     private void reply(Payment payment, String summary) {
