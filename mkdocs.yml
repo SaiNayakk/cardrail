@@ -19,6 +19,7 @@ markdown_extensions:
 nav:
   - Home: index.md
   - Architecture: architecture.md
+  - Four parties or three: closed-loop.md
   - Decisions: decisions.md
   - Environments: environments.md
   - Testing: testing.md
