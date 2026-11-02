@@ -7,7 +7,7 @@ spring:
     username: ${MERIDIAN_DB_USER:cardrail}
     password: ${MERIDIAN_DB_PASSWORD:cardrail}
     hikari:
-      maximum-pool-size: 4
+      maximum-pool-size: ${DB_POOL_SIZE:4}   # a cell running every service in one JVM sets 2
       pool-name: meridian
       connection-timeout: 2000
   flyway:

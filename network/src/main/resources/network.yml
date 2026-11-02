@@ -7,7 +7,7 @@ spring:
     username: ${NETWORK_DB_USER:cardrail}
     password: ${NETWORK_DB_PASSWORD:cardrail}
     hikari:
-      maximum-pool-size: 5
+      maximum-pool-size: ${DB_POOL_SIZE:5}   # a cell running every service in one JVM sets 2
       pool-name: network
       connection-timeout: 2000
   flyway:

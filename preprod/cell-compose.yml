@@ -1,0 +1,111 @@
+# A cell: every service in ONE JVM (the `cell` host), as each live cell runs it beside Sprout. Its memory caps are
+# the live ones: on the phone cardrail may use 400 MB in all, on the laptop 700 MB (docs/environments.md).
+#
+#   docker compose -f preprod/cell-compose.yml up -d --build --wait     (never while a live cell runs on this laptop)
+#
+# Every secret below is a throwaway value for this disposable environment only.
+name: cardrail-cell
+
+x-db: &db
+  ISSUER_DB_URL: jdbc:postgresql://postgres:5432/cardrail?currentSchema=issuer
+  NETWORK_DB_URL: jdbc:postgresql://postgres:5432/cardrail?currentSchema=network
+  TRACE_DB_URL: jdbc:postgresql://postgres:5432/cardrail?currentSchema=trace
+  MERIDIAN_DB_URL: jdbc:postgresql://postgres:5432/cardrail?currentSchema=meridian
+  ACQUIRER_DB_URL: jdbc:postgresql://postgres:5432/cardrail?currentSchema=acquirer
+  VAULT_DB_URL: jdbc:postgresql://postgres:5432/cardrail?currentSchema=vault
+  GATEWAY_DB_URL: jdbc:postgresql://postgres:5432/cardrail?currentSchema=gateway
+  ISSUER_DB_PASSWORD: preprod-only-not-a-secret
+  NETWORK_DB_PASSWORD: preprod-only-not-a-secret
+  TRACE_DB_PASSWORD: preprod-only-not-a-secret
+  MERIDIAN_DB_PASSWORD: preprod-only-not-a-secret
+  ACQUIRER_DB_PASSWORD: preprod-only-not-a-secret
+  VAULT_DB_PASSWORD: preprod-only-not-a-secret
+  GATEWAY_DB_PASSWORD: preprod-only-not-a-secret
+  # 7 services x 2 connections: a phone's Postgres shouldn't hold 30 idle backends for one demo
+  DB_POOL_SIZE: "2"
+
+services:
+  postgres:
+    image: postgres:18-alpine
+    environment:
+      POSTGRES_DB: cardrail
+      POSTGRES_USER: cardrail
+      POSTGRES_PASSWORD: preprod-only-not-a-secret
+    command: ["postgres", "-c", "shared_buffers=16MB", "-c", "max_connections=40"]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U cardrail -d cardrail"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+    mem_limit: 128m
+
+  cell:
+    build:
+      context: ..
+      dockerfile: preprod/Dockerfile.host
+    command: ["cell"]
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: on-failure
+    environment:
+      <<: *db
+      XMX: 176m
+      CARDRAIL_DEMO: "true"
+      CARDRAIL_INTERNAL_KEY: preprod-only-internal-key-not-a-secret
+      TRACE_URL: http://127.0.0.1:8206
+      LOG_FORMAT: ecs
+      # the edge reaches these from its own container
+      GATEWAY_BIND: 0.0.0.0
+      VAULT_BIND: 0.0.0.0
+      ACQUIRER_BIND: 0.0.0.0
+      DEMOSHOP_BIND: 0.0.0.0
+      NETWORK_BIND: 0.0.0.0
+      TRACE_BIND: 0.0.0.0
+      ISSUER_BIND: 0.0.0.0
+      MERIDIAN_BIND: 0.0.0.0
+      ISSUER_PAN_KEY: cHJlcHJvZC1vbmx5LWlzc3Vlci1wYW4ta2V5LTAwMDE=
+      ISSUER_HASH_KEY: cHJlcHJvZC1vbmx5LWlzc3Vlci1oYXNoLWtleS0wMDI=
+      ISSUER_CVK: cHJlcHJvZC1vbmx5LWlzc3Vlci1jdmsta2V5LTAwMDM=
+      VAULT_KEY: cHJlcHJvZC1vbmx5LXZhdWx0LWtleS0wMDAwMDAwMDQ=
+      NETWORK_KEY: cHJlcHJvZC1vbmx5LW5ldHdvcmsta2V5LTAwMDAwMDU=
+      MERIDIAN_KEY: cHJlcHJvZC1vbmx5LW1lcmlkaWFuLWtleS0wMDAwMDY=
+      DEMOSHOP_SECRET_KEY: sk_test_preprodOnlyDemoShopSecretKey0001
+      DEMOSHOP_PUBLISHABLE_KEY: pk_test_preprodOnlyDemoShop01
+      DEMOSHOP_WEBHOOK_SECRET: whsec_preprodOnlyDemoShopWebhookSecret01
+      ISSUER_CLEARING_EVERY: 5s
+      ACQUIRER_CLEARING_EVERY: 5s
+      NETWORK_SETTLE_EVERY: 15s
+      MERIDIAN_PAYOUT_EVERY: 15s
+      ISSUER_STATEMENT_CYCLE: 10m
+      ISSUER_PAYMENT_DUE_AFTER: 5m
+    healthcheck:
+      test: ["CMD-SHELL", "for p in 8201 8202 8203 8204 8205 8206 8207 8208; do wget -qO- http://127.0.0.1:$$p/actuator/health/readiness | grep -q UP || exit 1; done"]
+      interval: 3s
+      timeout: 5s
+      retries: 80
+    mem_limit: 320m
+
+  web:
+    build:
+      context: ../web
+    environment:
+      ACQUIRING: cell
+      NETWORK: cell
+      ISSUING: cell
+    depends_on:
+      cell:
+        condition: service_healthy
+    ports:
+      - "127.0.0.1:${CARDRAIL_WEB_PORT:-8280}:80"
+    mem_limit: 32m
+
+  k6:
+    image: grafana/k6:2.3.0
+    profiles: ["perf"]
+    environment:
+      BASE_URL: http://web
+    volumes:
+      - ./k6:/scripts:ro
+      - ./out:/out
+    cpus: 2
