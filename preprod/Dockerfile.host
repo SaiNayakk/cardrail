@@ -1,7 +1,8 @@
 # One image for every host; which group of services it runs is the first argument (acquiring, network, issuing, cell).
 # The jar is built by Maven before this (CI and run.sh do), so the image holds exactly what was tested.
+# A live cell keeps its state (ADR-015) in /state, a volume its edge reads too.
 FROM eclipse-temurin:21-jre-alpine
-RUN addgroup -S cardrail && adduser -S cardrail -G cardrail
+RUN addgroup -S cardrail && adduser -S cardrail -G cardrail && mkdir /state && chown cardrail:cardrail /state
 WORKDIR /app
 COPY host/target/cardrail-host.jar /app/cardrail-host.jar
 USER cardrail

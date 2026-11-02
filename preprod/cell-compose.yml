@@ -95,6 +95,7 @@ services:
       ACQUIRING: cell
       NETWORK: cell
       ISSUING: cell
+      MERIDIAN: cell
     depends_on:
       cell:
         condition: service_healthy

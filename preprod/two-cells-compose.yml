@@ -1,0 +1,189 @@
+# Two cells, as they run live (docs/decisions.md, ADR-015): cell a (the phone) runs the banks on its own Postgres,
+# cell b (the laptop) runs the rails on its own, and each copies the other's schemas by logical replication.
+#
+#   docker compose -f preprod/two-cells-compose.yml up -d --build --wait     (CI; never while a live cell runs here)
+#
+# Every secret below is a throwaway value for this disposable environment only.
+name: cardrail-two-cells
+
+x-pg: &pg
+  image: postgres:18-alpine
+  environment:
+    POSTGRES_DB: cardrail
+    POSTGRES_USER: cardrail
+    POSTGRES_PASSWORD: preprod-only-not-a-secret
+  command: ["postgres", "-c", "wal_level=logical", "-c", "shared_buffers=16MB", "-c", "max_connections=40"]
+  healthcheck:
+    test: ["CMD-SHELL", "pg_isready -U cardrail -d cardrail"]
+    interval: 2s
+    timeout: 3s
+    retries: 30
+  mem_limit: 128m
+
+x-host: &host
+  build:
+    context: ..
+    dockerfile: preprod/Dockerfile.host
+  restart: on-failure
+
+x-env: &env
+  CARDRAIL_DEMO: "true"
+  CARDRAIL_INTERNAL_KEY: preprod-only-internal-key-not-a-secret
+  LOG_FORMAT: ecs
+  CARDRAIL_DB_USER: cardrail
+  CARDRAIL_DB_PASSWORD: preprod-only-not-a-secret
+  DB_POOL_SIZE: "2"
+  DB_POOL_MIN_IDLE: "0"
+  DB_POOL_IDLE_TIMEOUT: "10000"
+
+services:
+  pg-a:
+    <<: *pg
+  pg-b:
+    <<: *pg
+
+  # Before either cell starts a release: migrate every schema in both cells, publish, then subscribe both ways
+  setup:
+    <<: *host
+    restart: "no"
+    entrypoint: ["sh", "-c", "set -e; run() { java -XX:+UseSerialGC -Xmx64m -jar /app/cardrail-host.jar \"$$@\"; };
+      for c in a b; do export CARDRAIL_CELL=$$c CARDRAIL_DB_URL=jdbc:postgresql://pg-$$c:5432/cardrail; run migrate; done;
+      export CARDRAIL_CELL=a CARDRAIL_DB_URL=jdbc:postgresql://pg-a:5432/cardrail CARDRAIL_PEER_DB_URL=jdbc:postgresql://pg-b:5432/cardrail; run replicate || true;
+      export CARDRAIL_CELL=b CARDRAIL_DB_URL=jdbc:postgresql://pg-b:5432/cardrail CARDRAIL_PEER_DB_URL=jdbc:postgresql://pg-a:5432/cardrail; run replicate;
+      export CARDRAIL_CELL=a CARDRAIL_DB_URL=jdbc:postgresql://pg-a:5432/cardrail CARDRAIL_PEER_DB_URL=jdbc:postgresql://pg-b:5432/cardrail; run replicate"]
+    environment:
+      <<: *env
+    depends_on:
+      pg-a:
+        condition: service_healthy
+      pg-b:
+        condition: service_healthy
+
+  banks:
+    <<: *host
+    command: ["banks"]
+    depends_on:
+      setup:
+        condition: service_completed_successfully
+    environment: &banks-env
+      <<: *env
+      CARDRAIL_CELL: a
+      XMX: 96m
+      TRACE_URL: http://rails:8206
+      ISSUER_DB_URL: jdbc:postgresql://pg-a:5432/cardrail?currentSchema=issuer
+      ISSUER_DB_PASSWORD: preprod-only-not-a-secret
+      MERIDIAN_DB_URL: jdbc:postgresql://pg-a:5432/cardrail?currentSchema=meridian
+      MERIDIAN_DB_PASSWORD: preprod-only-not-a-secret
+      ISSUER_BIND: 0.0.0.0
+      ISSUER_ISO_BIND: 0.0.0.0
+      MERIDIAN_BIND: 0.0.0.0
+      MERIDIAN_ISO_BIND: 0.0.0.0
+      ISSUER_PAN_KEY: cHJlcHJvZC1vbmx5LWlzc3Vlci1wYW4ta2V5LTAwMDE=
+      ISSUER_HASH_KEY: cHJlcHJvZC1vbmx5LWlzc3Vlci1oYXNoLWtleS0wMDI=
+      ISSUER_CVK: cHJlcHJvZC1vbmx5LWlzc3Vlci1jdmsta2V5LTAwMDM=
+      MERIDIAN_KEY: cHJlcHJvZC1vbmx5LW1lcmlkaWFuLWtleS0wMDAwMDY=
+      ISSUER_NETWORK_URL: http://rails:8204
+      MERIDIAN_GATEWAY_URL: http://rails:8201
+      ISSUER_CLEARING_EVERY: 5s
+      ISSUER_STATEMENT_CYCLE: 10m
+      ISSUER_PAYMENT_DUE_AFTER: 5m
+      MERIDIAN_PAYOUT_EVERY: 15s
+    healthcheck:
+      test: ["CMD-SHELL", "for p in 8205 8208; do wget -qO- http://127.0.0.1:$$p/actuator/health/readiness | grep -q UP || exit 1; done"]
+      interval: 3s
+      timeout: 5s
+      retries: 80
+    mem_limit: 256m
+
+  rails:
+    <<: *host
+    command: ["rails"]
+    depends_on:
+      setup:
+        condition: service_completed_successfully
+    environment: &rails-env
+      <<: *env
+      CARDRAIL_CELL: b
+      XMX: 144m
+      TRACE_URL: http://127.0.0.1:8206
+      TRACE_DB_URL: jdbc:postgresql://pg-b:5432/cardrail?currentSchema=trace
+      NETWORK_DB_URL: jdbc:postgresql://pg-b:5432/cardrail?currentSchema=network
+      ACQUIRER_DB_URL: jdbc:postgresql://pg-b:5432/cardrail?currentSchema=acquirer
+      VAULT_DB_URL: jdbc:postgresql://pg-b:5432/cardrail?currentSchema=vault
+      GATEWAY_DB_URL: jdbc:postgresql://pg-b:5432/cardrail?currentSchema=gateway
+      TRACE_DB_PASSWORD: preprod-only-not-a-secret
+      NETWORK_DB_PASSWORD: preprod-only-not-a-secret
+      ACQUIRER_DB_PASSWORD: preprod-only-not-a-secret
+      VAULT_DB_PASSWORD: preprod-only-not-a-secret
+      GATEWAY_DB_PASSWORD: preprod-only-not-a-secret
+      TRACE_BIND: 0.0.0.0
+      NETWORK_BIND: 0.0.0.0
+      NETWORK_ISO_BIND: 0.0.0.0
+      ACQUIRER_BIND: 0.0.0.0
+      VAULT_BIND: 0.0.0.0
+      GATEWAY_BIND: 0.0.0.0
+      DEMOSHOP_BIND: 0.0.0.0
+      NETWORK_KESTREL_HOST: banks
+      NETWORK_KESTREL_ACS_URL: http://banks:8205
+      ACQUIRER_MERIDIAN_HOST: banks
+      ACQUIRER_MERIDIAN_URL: http://banks:8208
+      NETWORK_KEY: cHJlcHJvZC1vbmx5LW5ldHdvcmsta2V5LTAwMDAwMDU=
+      VAULT_KEY: cHJlcHJvZC1vbmx5LXZhdWx0LWtleS0wMDAwMDAwMDQ=
+      DEMOSHOP_SECRET_KEY: sk_test_preprodOnlyDemoShopSecretKey0001
+      DEMOSHOP_PUBLISHABLE_KEY: pk_test_preprodOnlyDemoShop01
+      DEMOSHOP_WEBHOOK_SECRET: whsec_preprodOnlyDemoShopWebhookSecret01
+      ACQUIRER_CLEARING_EVERY: 5s
+      NETWORK_SETTLE_EVERY: 15s
+    healthcheck:
+      test: ["CMD-SHELL", "for p in 8201 8202 8203 8204 8206 8207; do wget -qO- http://127.0.0.1:$$p/actuator/health/readiness | grep -q UP || exit 1; done"]
+      interval: 3s
+      timeout: 5s
+      retries: 80
+    mem_limit: 320m
+
+  # The phone's cell is lost: the laptop stops copying, takes the banks' schemas over, and runs every service in
+  # one JVM, answering under both names; later it hands them back (TwoCellsTest; profile "takeover").
+  # A cell's database commands (promote, rejoin, release, resume, replicate): the cell and its databases are given per run
+  admin:
+    <<: *host
+    profiles: ["takeover"]
+    restart: "no"
+    environment:
+      <<: *env
+
+  standby-b:
+    <<: *host
+    profiles: ["takeover"]
+    command: ["cell"]
+    environment:
+      <<: [*banks-env, *rails-env]
+      CARDRAIL_CELL: b
+      XMX: 176m
+      ISSUER_DB_URL: jdbc:postgresql://pg-b:5432/cardrail?currentSchema=issuer
+      MERIDIAN_DB_URL: jdbc:postgresql://pg-b:5432/cardrail?currentSchema=meridian
+    networks:
+      default:
+        aliases: [banks, rails]
+    healthcheck:
+      test: ["CMD-SHELL", "for p in 8201 8202 8203 8204 8205 8206 8207 8208; do wget -qO- http://127.0.0.1:$$p/actuator/health/readiness | grep -q UP || exit 1; done"]
+      interval: 3s
+      timeout: 5s
+      retries: 80
+    mem_limit: 320m
+
+  web:
+    build:
+      context: ../web
+    environment:
+      ACQUIRING: rails
+      NETWORK: rails
+      ISSUING: banks
+      MERIDIAN: banks
+    depends_on:
+      rails:
+        condition: service_healthy
+      banks:
+        condition: service_healthy
+    ports:
+      - "127.0.0.1:${CARDRAIL_WEB_PORT:-8280}:80"
+    mem_limit: 32m

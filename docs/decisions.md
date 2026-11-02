@@ -195,3 +195,38 @@ cycle as 30 days.
 statement in full and purchases cost nothing.
 
 **Lost.** No promotional rates, no cash advances (they'd have no grace period), no penalty APR.
+
+## ADR-015: Two cells split by institution, each copying the other { #adr-015-two-cells }
+
+**Decision.** Both cells serve, and they split by institution: the phone (cell a) runs the banks, Kestrel Bank and
+Meridian, in one JVM (`banks`); the laptop (cell b) runs everything between the merchant and the banks, in one JVM
+(`rails`): gateway, vault, acquirer, demo shop, Railnet and the trace. Every card payment crosses both cells: Railnet
+sends ISO 8583 to Kestrel Bank over the home network, as a network reaches a bank over a private line.
+
+Each cell's `cardrail` database (its own database and role inside Sprout's Postgres) owns the schemas of what it
+runs and publishes them; it subscribes to the other cell's. Each cell so holds a whole copy, and no table is written
+in two places, so the two-way replication has no conflicts to resolve. Flyway's history stays out of it: each cell
+migrates every schema, owned or copied, before either starts a release, because logical replication carries rows,
+not DDL.
+
+When a cell is lost, the other takes it over: it stops copying, moves the copied schemas' sequences past every
+copied id (replication doesn't carry sequences), publishes everything, and restarts as the all-in-one `cell` host on
+its now-whole database. On the phone it waits until Sprout's own takeover has finished, so two JVMs never start at
+once at the phone's worst memory moment. A cell that comes back while the other holds its institutions serves
+nothing until it is handed them back (runbook).
+
+**Why.** It is how card payments are actually spread: a bank's systems don't live in the network's data centre.
+It makes the two cells serve at once without the hard problem of active-active writes, and it fits the phone: the
+banks use about 180 MB, and the whole system in one JVM about 300 MB, under the 400 MB the phone can give. A short
+loss of the phone needs no takeover at all: Railnet stands in for Kestrel Bank within its limits and tells it
+afterwards (ADR-007).
+
+**Lost.**
+- Every payment needs both cells, or Railnet's stand-in; a payment is as available as the two cells together.
+- A takeover restarts the survivor's own half too: about a minute without payments.
+- Writes in the seconds before a cell was lost may not have reached the other's copy. The acquirer's reversals
+  (ADR-008) and the advices (ADR-007) are kept in the rails' schemas, so the ones lost are the bank's own last
+  records; the network's settlement figures show any difference.
+- A cell that can't see the other but is still running (a split) could be taken over while it serves. The takeover
+  requires the other cell silent on both the home network and its public address, which makes that rare, not
+  impossible.

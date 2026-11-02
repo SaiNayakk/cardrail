@@ -5,7 +5,7 @@
 1. Every change arrives by pull request. `main` is protected: it merges only when the `ci` check is green.
 2. CI builds and tests each module that changed, builds and tests the web app, and runs pre-prod.
 3. After the merge is confirmed, the release is an annotated tag `vX.Y.Z` on `main`.
-4. Only a tagged release is deployed, to the laptop and the phone (phase 8).
+4. Only a tagged release is deployed, to the laptop and the phone ([running the live cells](runbooks.md)).
 
 ## Pre-prod is disposable
 
@@ -48,3 +48,11 @@ The `web` container is the only thing published. It serves the web app and forwa
 | `/api/trace/` | The live trace |
 
 `/internal` and `/actuator` are never forwarded (E2E-06).
+
+## Two cells, as live
+
+[`preprod/two-cells-compose.yml`](https://github.com/SaiNayakk/cardrail/blob/main/preprod/two-cells-compose.yml) runs the
+live layout ([ADR-015](decisions.md#adr-015-two-cells)): the banks on one Postgres, the rails on another, each
+copying the other's schemas. CI runs the same journeys through it, then `TwoCellsTest`: a payment's records in both
+databases (CELL-01), the phone's cell lost and the laptop taking its banks over with every card and payment
+(CELL-02), and the phone's cell handed its banks back with what happened while it was away (CELL-03).

@@ -14,3 +14,7 @@ site/
 node_modules/
 dist/
 .angular/
+deploy/laptop/tunnel/
+deploy/phone/tunnel/
+deploy/**/secrets.env
+deploy/*.env
