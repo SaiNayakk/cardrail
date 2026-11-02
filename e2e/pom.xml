@@ -29,6 +29,7 @@
           <systemPropertyVariables>
             <e2e.baseUrl>${e2e.baseUrl}</e2e.baseUrl>
             <e2e.chaos>${e2e.chaos}</e2e.chaos>
+            <e2e.twoCells>${e2e.twoCells}</e2e.twoCells>
           </systemPropertyVariables>
           <reportsDirectory>${project.build.directory}/e2e-reports</reportsDirectory>
         </configuration>

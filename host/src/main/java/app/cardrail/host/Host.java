@@ -30,6 +30,9 @@ import java.util.function.Supplier;
  *   <li>{@code cell}: all of them, as the other cell's standby</li>
  * </ul>
  *
+ * The live cells split by institution instead (ADR-015): {@code banks} (Kestrel Bank and Meridian) runs on the phone,
+ * {@code rails} (everything between the merchant and the banks) on the laptop.
+ *
  * Services start in dependency order, but none needs another to be up: links connect when first used.
  */
 public final class Host {
@@ -41,6 +44,9 @@ public final class Host {
             "network", List.of(TraceApplication::builder, NetworkApplication::builder, MeridianApplication::builder),
             "acquiring", List.of(AcquirerApplication::builder, VaultApplication::builder, GatewayApplication::builder,
                     DemoShopApplication::builder),
+            "banks", List.of(IssuerApplication::builder, MeridianApplication::builder),
+            "rails", List.of(TraceApplication::builder, NetworkApplication::builder, AcquirerApplication::builder,
+                    VaultApplication::builder, GatewayApplication::builder, DemoShopApplication::builder),
             "cell", List.of(TraceApplication::builder, IssuerApplication::builder, NetworkApplication::builder, MeridianApplication::builder,
                     AcquirerApplication::builder, VaultApplication::builder, GatewayApplication::builder,
                     DemoShopApplication::builder));
@@ -50,8 +56,11 @@ public final class Host {
 
     public static void main(String[] args) {
         String group = args.length > 0 ? args[0] : System.getenv().getOrDefault("CARDRAIL_HOST", "");
+        if (List.of("migrate", "replicate", "promote").contains(group)) {
+            System.exit(admin(group));
+        }
         if (!GROUPS.containsKey(group)) {
-            System.err.println("Usage: java -jar cardrail-host.jar <acquiring|network|issuing|cell>");
+            System.err.println("Usage: java -jar cardrail-host.jar <acquiring|network|issuing|banks|rails|cell|migrate|replicate|promote>");
             System.exit(2);
         }
         String[] rest = args.length > 0 ? Arrays.copyOfRange(args, 1, args.length) : args;
@@ -60,6 +69,26 @@ public final class Host {
         } catch (RuntimeException e) {
             log.error("The {} host couldn't start; exiting so it gets restarted", group, e);
             System.exit(1);
+        }
+    }
+
+    /** One of a live cell's database commands (CellAdmin); 0 when it worked. */
+    static int admin(String command) {
+        try {
+            CellAdmin admin = new CellAdmin(System.getenv());
+            switch (command) {
+                case "migrate" -> admin.migrate();
+                case "replicate" -> {
+                    if (!admin.replicate()) {
+                        return 2;
+                    }
+                }
+                default -> admin.promote();
+            }
+            return 0;
+        } catch (Exception e) {
+            log.error("{} failed", command, e);
+            return 1;
         }
     }
 

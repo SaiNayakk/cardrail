@@ -2,7 +2,7 @@
 # APIs share one origin. Nothing under /internal or /actuator is ever forwarded: the internal key is not the
 # only thing between the internet and those doors.
 #
-# ${ACQUIRING}, ${NETWORK} and ${ISSUING} are where each host is (all the same address on a cell's standby).
+# ${ACQUIRING}, ${NETWORK}, ${ISSUING} and ${MERIDIAN} are where each service group is (all one address on a cell).
 server {
     listen 80;
     server_name _;
@@ -84,13 +84,13 @@ server {
         add_header Cache-Control "no-store" always;
     }
     location = /api/books/meridian {
-        set $meridian http://${NETWORK}:8208;
+        set $meridian http://${MERIDIAN}:8208;
         rewrite ^ /v1/books break;
         proxy_pass $meridian;
         add_header Cache-Control "no-store" always;
     }
     location = /api/meridian/test-cards {
-        set $meridian http://${NETWORK}:8208;
+        set $meridian http://${MERIDIAN}:8208;
         rewrite ^ /v1/test-cards break;
         proxy_pass $meridian;
         add_header Cache-Control "no-store" always;
