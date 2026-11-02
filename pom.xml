@@ -33,6 +33,7 @@
     <module>vault</module>
     <module>gateway</module>
     <module>trace</module>
+    <module>closedloop</module>
     <module>demoshop</module>
     <module>host</module>
     <module>e2e</module>

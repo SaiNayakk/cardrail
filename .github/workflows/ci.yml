@@ -54,6 +54,9 @@ jobs:
             demoshop:
               - *common
               - 'demoshop/**'
+            closedloop:
+              - *common
+              - 'closedloop/**'
 
   build:
     needs: changes
@@ -138,7 +141,7 @@ jobs:
       - name: Create pre-prod
         run: docker compose -f preprod/docker-compose.yml up -d --build --wait --wait-timeout 300
       - name: End-to-end tests
-        run: ./mvnw -B -pl e2e test -De2e.baseUrl=http://127.0.0.1:8280 -Dtest='AuthorisationJourneyTest,ClearingJourneyTest,CardholderJourneyTest'
+        run: ./mvnw -B -pl e2e test -De2e.baseUrl=http://127.0.0.1:8280 -Dtest='AuthorisationJourneyTest,ClearingJourneyTest,CardholderJourneyTest,ClosedLoopJourneyTest'
       - name: Chaos experiments
         run: ./mvnw -B -pl e2e test -De2e.baseUrl=http://127.0.0.1:8280 -De2e.chaos=${{ github.workspace }}/preprod/docker-compose.yml -Dtest='ChaosTest' -Dsurefire.reportNameSuffix=chaos
       - name: Memory each host used

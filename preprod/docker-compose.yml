@@ -77,8 +77,15 @@ services:
       NETWORK_KEY: cHJlcHJvZC1vbmx5LW5ldHdvcmsta2V5LTAwMDAwMDU=
       NETWORK_SETTLE_EVERY: 15s
       NETWORK_KESTREL_ACS_URL: http://issuing:8205
+      MERIDIAN_DB_URL: jdbc:postgresql://postgres:5432/cardrail?currentSchema=meridian
+      MERIDIAN_DB_PASSWORD: preprod-only-not-a-secret
+      MERIDIAN_BIND: 0.0.0.0
+      MERIDIAN_ISO_BIND: 0.0.0.0
+      MERIDIAN_KEY: cHJlcHJvZC1vbmx5LW1lcmlkaWFuLWtleS0wMDAwMDY=
+      MERIDIAN_GATEWAY_URL: http://acquiring:8201
+      MERIDIAN_PAYOUT_EVERY: 15s
     healthcheck:
-      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:8204/actuator/health/readiness | grep -q UP && wget -qO- http://127.0.0.1:8206/actuator/health/readiness | grep -q UP"]
+      test: ["CMD-SHELL", "for p in 8204 8206 8208; do wget -qO- http://127.0.0.1:$$p/actuator/health/readiness | grep -q UP || exit 1; done"]
       interval: 3s
       timeout: 3s
       retries: 60
@@ -103,6 +110,8 @@ services:
       ACQUIRER_NETWORK_HOST: network
       ACQUIRER_NETWORK_URL: http://network:8204
       ACQUIRER_CLEARING_EVERY: 5s
+      ACQUIRER_MERIDIAN_HOST: network
+      ACQUIRER_MERIDIAN_URL: http://network:8208
       GATEWAY_NETWORK_URL: http://network:8204
       VAULT_KEY: cHJlcHJvZC1vbmx5LXZhdWx0LWtleS0wMDAwMDAwMDQ=
       DEMOSHOP_SECRET_KEY: sk_test_preprodOnlyDemoShopSecretKey0001

@@ -14,13 +14,13 @@ public class AcquirerStore {
 
     public record Authorisation(UUID id, UUID merchantId, String tid, String rrn, String stan, String transmitted, String kind,
                                 String originalRrn, long amountCents, long capturedCents, String responseCode, String authCode,
-                                String status) {}
+                                String status, String scheme) {}
 
     public record Reversal(long id, String rrn, String reason, long remainingCents, int attempts) {}
 
     private static final String AUTHORISATION = """
             select id, merchant_id, tid, rrn, stan, transmitted, kind, original_rrn, amount_cents, captured_cents,
-                   response_code, auth_code, status
+                   response_code, auth_code, status, scheme
             from authorisations""";
 
     private final JdbcClient jdbc;
@@ -69,11 +69,11 @@ public class AcquirerStore {
                            long amountCents, String currency, String kind, String originalRrn) {
         return jdbc.sql("""
                 insert into authorisations (id, merchant_id, tid, rrn, stan, transmitted, bin, last4, amount_cents, currency,
-                                            status, kind, original_rrn)
-                values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'PENDING', ?, ?)
+                                            status, kind, original_rrn, scheme)
+                values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'PENDING', ?, ?, ?)
                 on conflict (rrn) do nothing""")
                 .params(UUID.randomUUID(), merchantId, tid, rrn, stan, transmitted, pan.substring(0, 6),
-                        pan.substring(pan.length() - 4), amountCents, currency, kind, originalRrn)
+                        pan.substring(pan.length() - 4), amountCents, currency, kind, originalRrn, NetworkLink.schemeOf(pan))
                 .update() == 1;
     }
 

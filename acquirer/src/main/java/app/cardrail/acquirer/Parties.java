@@ -6,6 +6,7 @@ final class Parties {
     static final String GATEWAY = "railpay";
     static final String ACQUIRER = "railpay-acquiring";
     static final String RAILNET = "railnet";
+    static final String MERIDIAN = "meridian";
 
     private Parties() {
     }

@@ -83,6 +83,18 @@ server {
         proxy_pass $network;
         add_header Cache-Control "no-store" always;
     }
+    location = /api/books/meridian {
+        set $meridian http://${NETWORK}:8208;
+        rewrite ^ /v1/books break;
+        proxy_pass $meridian;
+        add_header Cache-Control "no-store" always;
+    }
+    location = /api/meridian/test-cards {
+        set $meridian http://${NETWORK}:8208;
+        rewrite ^ /v1/test-cards break;
+        proxy_pass $meridian;
+        add_header Cache-Control "no-store" always;
+    }
     location = /api/books/railpay-acquiring {
         set $acquirer http://${ACQUIRING}:8203;
         rewrite ^ /v1/books break;

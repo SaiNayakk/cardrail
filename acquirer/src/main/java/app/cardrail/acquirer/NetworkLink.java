@@ -17,14 +17,26 @@ import java.util.concurrent.atomic.AtomicInteger;
 public class NetworkLink {
 
     private final IsoLink link;
+    private final IsoLink meridian;
     private final AtomicInteger stan = new AtomicInteger((int) (Math.random() * 900_000));
 
     public NetworkLink(AcquirerProperties props, Iso8583Codec codec) {
         this.link = new IsoLink("acquirer-to-railnet", props.networkHost(), props.networkPort(), codec);
+        this.meridian = new IsoLink("acquirer-to-meridian", props.meridianHost(), props.meridianPort(), codec);
     }
 
     public IsoLink link() {
         return link;
+    }
+
+    /** Railnet for the cards it routes, Meridian for its own: a closed loop is reached directly. */
+    public IsoLink link(String scheme) {
+        return "MERIDIAN".equals(scheme) ? meridian : link;
+    }
+
+    /** Meridian's cards start 39, as American Express cards start 34 and 37. */
+    public static String schemeOf(String pan) {
+        return pan != null && pan.startsWith("39") ? "MERIDIAN" : "RAILNET";
     }
 
     public String nextStan() {
@@ -34,6 +46,7 @@ public class NetworkLink {
     @PreDestroy
     void close() {
         link.close();
+        meridian.close();
     }
 
     @Configuration(proxyBeanMethods = false)

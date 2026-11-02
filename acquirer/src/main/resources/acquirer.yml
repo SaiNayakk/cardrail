@@ -36,6 +36,10 @@ acquirer:
   internal-key: ${CARDRAIL_INTERNAL_KEY:}
   network-url: ${ACQUIRER_NETWORK_URL:http://127.0.0.1:8204}
   gateway-url: ${ACQUIRER_GATEWAY_URL:http://127.0.0.1:8201}
+  # Meridian, the closed loop: its cards (BIN 39) go straight to it, by ISO 8583, and its submissions by file
+  meridian-host: ${ACQUIRER_MERIDIAN_HOST:127.0.0.1}
+  meridian-port: ${ACQUIRER_MERIDIAN_PORT:9208}
+  meridian-url: ${ACQUIRER_MERIDIAN_URL:http://127.0.0.1:8208}
   # how often captured payments are presented to Railnet, and settlement reports and chargebacks collected
   clearing-every: ${ACQUIRER_CLEARING_EVERY:2m}
 

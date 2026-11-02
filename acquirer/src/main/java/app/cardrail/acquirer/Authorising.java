@@ -129,9 +129,10 @@ public class Authorising {
                 .set(48, Subelements.encode(field48))
                 .set(49, "840");
 
-        trace.iso(r.rrn(), Parties.ACQUIRER, Parties.RAILNET, request);
+        String scheme = NetworkLink.schemeOf(r.pan());
+        trace.iso(r.rrn(), Parties.ACQUIRER, "MERIDIAN".equals(scheme) ? Parties.MERIDIAN : Parties.RAILNET, request);
         try {
-            IsoMessage response = network.link().send(request, props.networkTimeout()).get();
+            IsoMessage response = network.link(scheme).send(request, props.networkTimeout()).get();
             String code = response.get(39);
             String status = APPROVED.equals(code) ? "APPROVED" : "DECLINED";
             store.answered(r.rrn(), code, response.get(38), status);
