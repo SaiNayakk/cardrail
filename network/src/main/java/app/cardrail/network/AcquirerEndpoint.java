@@ -84,6 +84,11 @@ class AcquirerEndpoint implements SmartLifecycle {
         }
 
         @Bean
+        java.time.Clock clock() {
+            return java.time.Clock.systemUTC();
+        }
+
+        @Bean
         TraceReporter traceReporter(NetworkProperties props, ObjectMapper json) {
             return new TraceReporter(Parties.RAILNET, props.traceUrl(), props.internalKey(), json);
         }

@@ -48,6 +48,9 @@ services:
       ISSUER_PAN_KEY: cHJlcHJvZC1vbmx5LWlzc3Vlci1wYW4ta2V5LTAwMDE=
       ISSUER_HASH_KEY: cHJlcHJvZC1vbmx5LWlzc3Vlci1oYXNoLWtleS0wMDI=
       ISSUER_CVK: cHJlcHJvZC1vbmx5LWlzc3Vlci1jdmsta2V5LTAwMDM=
+      ISSUER_NETWORK_URL: http://network:8204
+      # pre-prod runs the clearing day fast: files every few seconds, settlement every 15
+      ISSUER_CLEARING_EVERY: 5s
     healthcheck:
       test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:8205/actuator/health/readiness | grep -q UP"]
       interval: 3s
@@ -70,6 +73,7 @@ services:
       TRACE_BIND: 0.0.0.0
       NETWORK_KESTREL_HOST: issuing
       NETWORK_KEY: cHJlcHJvZC1vbmx5LW5ldHdvcmsta2V5LTAwMDAwMDU=
+      NETWORK_SETTLE_EVERY: 15s
     healthcheck:
       test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:8204/actuator/health/readiness | grep -q UP && wget -qO- http://127.0.0.1:8206/actuator/health/readiness | grep -q UP"]
       interval: 3s
@@ -94,6 +98,8 @@ services:
       GATEWAY_BIND: 0.0.0.0
       DEMOSHOP_BIND: 0.0.0.0
       ACQUIRER_NETWORK_HOST: network
+      ACQUIRER_NETWORK_URL: http://network:8204
+      ACQUIRER_CLEARING_EVERY: 5s
       VAULT_KEY: cHJlcHJvZC1vbmx5LXZhdWx0LWtleS0wMDAwMDAwMDQ=
       DEMOSHOP_SECRET_KEY: sk_test_preprodOnlyDemoShopSecretKey0001
       DEMOSHOP_PUBLISHABLE_KEY: pk_test_preprodOnlyDemoShop01

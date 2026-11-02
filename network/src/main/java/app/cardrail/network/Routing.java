@@ -17,7 +17,7 @@ import java.util.stream.Collectors;
 @Component
 public class Routing {
 
-    public record Range(String low, String high, String issuerId, String product) {}
+    public record Range(String low, String high, String issuerId, String product, String funding) {}
 
     private final JdbcClient jdbc;
     private volatile TreeMap<String, Range> byLow = new TreeMap<>();
@@ -31,7 +31,7 @@ public class Routing {
     @Scheduled(fixedDelay = 60_000, initialDelay = 60_000)
     public void reload() {
         TreeMap<String, Range> ranges = new TreeMap<>();
-        jdbc.sql("select low, high, issuer_id, product from bin_ranges").query(Range.class).list()
+        jdbc.sql("select low, high, issuer_id, product, funding from bin_ranges").query(Range.class).list()
                 .forEach(r -> ranges.put(r.low(), r));
         byLow = ranges;
         acquirers = jdbc.sql("select institution_id from members where role = 'ACQUIRER'").query(String.class).list()

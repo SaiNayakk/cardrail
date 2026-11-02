@@ -34,6 +34,8 @@ network:
   issuer-timeout: ${NETWORK_ISSUER_TIMEOUT:3s}
   echo-every: ${NETWORK_ECHO_EVERY:5s}
   key: ${NETWORK_KEY:}
+  # the settlement cut-off: everything cleared since the last one is settled net
+  settle-every: ${NETWORK_SETTLE_EVERY:5m}
   issuers:
     "286001":
       host: ${NETWORK_KESTREL_HOST:127.0.0.1}

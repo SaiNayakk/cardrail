@@ -36,6 +36,10 @@ issuer:
   trace-url: ${TRACE_URL:}
   internal-key: ${CARDRAIL_INTERNAL_KEY:}
   demo: ${CARDRAIL_DEMO:false}
+  network-url: ${ISSUER_NETWORK_URL:http://127.0.0.1:8204}
+  hold-days: ${ISSUER_HOLD_DAYS:7}
+  # how often Kestrel Bank collects its clearing files and settlement reports, and sends its chargebacks
+  clearing-every: ${ISSUER_CLEARING_EVERY:30s}
 
 cardrail:
   internal-key: ${CARDRAIL_INTERNAL_KEY:}

@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: Railpay merchant API
-  version: 2.0.0
+  version: 2.1.0
   description: |
     How a merchant's server takes card payments. Authenticate with your secret key:
     `Authorization: Bearer sk_test_...`. Card details never reach your server: the hosted card form gives your
@@ -139,6 +139,98 @@ paths:
         '409': { $ref: '#/components/responses/Problem' }
         '422': { $ref: '#/components/responses/Problem' }
         '503': { $ref: '#/components/responses/Problem' }
+  /disputes:
+    get:
+      operationId: listDisputes
+      summary: Chargebacks against your payments, newest first
+      responses:
+        '200':
+          description: A page of disputes
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [object, data]
+                properties:
+                  object: { const: list }
+                  data:
+                    type: array
+                    items: { $ref: '#/components/schemas/Dispute' }
+        '401': { $ref: '#/components/responses/Problem' }
+  /disputes/{id}:
+    get:
+      operationId: getDispute
+      summary: One dispute
+      parameters:
+        - $ref: '#/components/parameters/DisputeId'
+      responses:
+        '200':
+          description: The dispute
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Dispute' }
+        '401': { $ref: '#/components/responses/Problem' }
+        '404': { $ref: '#/components/responses/Problem' }
+  /disputes/{id}/evidence:
+    post:
+      operationId: answerDispute
+      summary: Answer a dispute with evidence; the cardholder's bank decides
+      parameters:
+        - $ref: '#/components/parameters/DisputeId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [evidence]
+              properties:
+                evidence: { type: string, minLength: 1, maxLength: 2000 }
+      responses:
+        '200':
+          description: The dispute, now under review
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Dispute' }
+        '401': { $ref: '#/components/responses/Problem' }
+        '404': { $ref: '#/components/responses/Problem' }
+        '409': { $ref: '#/components/responses/Problem' }
+        '503': { $ref: '#/components/responses/Problem' }
+  /disputes/{id}/accept:
+    post:
+      operationId: acceptDispute
+      summary: Accept a dispute; the cardholder keeps the money
+      parameters:
+        - $ref: '#/components/parameters/DisputeId'
+      responses:
+        '200':
+          description: The dispute, lost
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/Dispute' }
+        '401': { $ref: '#/components/responses/Problem' }
+        '404': { $ref: '#/components/responses/Problem' }
+        '409': { $ref: '#/components/responses/Problem' }
+        '503': { $ref: '#/components/responses/Problem' }
+  /payouts:
+    get:
+      operationId: listPayouts
+      summary: What you were paid, newest first; each is everything settled since the one before, less fees and chargebacks
+      responses:
+        '200':
+          description: A page of payouts
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [object, data]
+                properties:
+                  object: { const: list }
+                  data:
+                    type: array
+                    items: { $ref: '#/components/schemas/Payout' }
+        '401': { $ref: '#/components/responses/Problem' }
   /payments/{id}:
     get:
       operationId: getPayment
@@ -184,6 +276,11 @@ components:
       in: path
       required: true
       schema: { type: string, pattern: '^pay_' }
+    DisputeId:
+      name: id
+      in: path
+      required: true
+      schema: { type: string, pattern: '^dsp_' }
     IdempotencyKey:
       name: Idempotency-Key
       in: header
@@ -277,12 +374,40 @@ components:
         type:
           type: string
           enum: [payment.authorised, payment.declined, payment.captured, payment.voided, payment.reversed,
-                 refund.succeeded, refund.failed]
+                 refund.succeeded, refund.failed, dispute.created, dispute.won, dispute.lost, payout.paid]
         createdAt: { type: string, format: date-time }
         data:
           oneOf:
             - $ref: '#/components/schemas/Payment'
             - $ref: '#/components/schemas/Refund'
+            - $ref: '#/components/schemas/Dispute'
+            - $ref: '#/components/schemas/Payout'
+    Dispute:
+      type: object
+      required: [id, object, payment, amount, reason, reasonCode, status, createdAt]
+      properties:
+        id: { type: string, pattern: '^dsp_' }
+        object: { const: dispute }
+        payment: { type: string, pattern: '^pay_' }
+        amount: { type: integer }
+        reason: { type: string, description: The reason in plain words }
+        reasonCode: { type: string, description: 'The network reason code: 1040 fraud, 1310 not received, 1330 not as described, 1240 charged twice' }
+        status:
+          type: string
+          enum: [needs_response, under_review, won, lost]
+        createdAt: { type: string, format: date-time }
+    Payout:
+      type: object
+      required: [id, object, amount, sales, refunds, fees, disputes, createdAt]
+      properties:
+        id: { type: string, pattern: '^po_' }
+        object: { const: payout }
+        amount: { type: integer, description: 'Paid to you: sales - refunds - fees - disputes' }
+        sales: { type: integer }
+        refunds: { type: integer }
+        fees: { type: integer, description: The merchant discount (MDR) on the sales }
+        disputes: { type: integer, description: Chargebacks less those you won back }
+        createdAt: { type: string, format: date-time }
     Problem:
       type: object
       required: [status, code, detail]

@@ -28,6 +28,18 @@ and checks the result and its trace.
 | E2E-09 | The shop is told by a signed webhook, which it checks before believing |
 | E2E-10 | Version 1 of the merchant API is still answered at its first address, and version 2 at its own |
 
+## Clearing, settlement and reconciliation
+
+Pre-prod runs the clearing day fast (files every 5 s, settlement every 15 s), so these wait up to two minutes.
+
+| Id | Checks |
+|---|---|
+| CLEAR-01 | A captured payment is presented with the merchant's fee, cleared by Railnet with interchange, and posted to the cardholder |
+| SETTLE-01 | Once settled, the shop is paid what it sold less refunds, fees and disputes, to the cent |
+| DISPUTE-01 | A cardholder disputes a purchase; the chargeback reaches the shop; the shop answers with evidence; the representment reaches the cardholder's bank and the shop wins |
+| RECON-01 | Every party's books add up to zero |
+| RECON-02 | Once the day is quiet, everything cleared has been settled and booked by both sides: nothing is due anywhere |
+
 ## Chaos experiments
 
 They pause real containers in pre-prod, then check that nobody is charged for a payment the merchant was told

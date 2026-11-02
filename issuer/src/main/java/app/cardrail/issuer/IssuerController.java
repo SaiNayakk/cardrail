@@ -23,12 +23,44 @@ class IssuerController {
     private final IssuerStore store;
     private final CardIssuing issuing;
     private final CardKeys keys;
+    private final IssuerBooks books;
 
-    IssuerController(IssuerProperties props, IssuerStore store, CardIssuing issuing, CardKeys keys) {
+    IssuerController(IssuerProperties props, IssuerStore store, CardIssuing issuing, CardKeys keys, IssuerBooks books) {
         this.props = props;
         this.store = store;
         this.issuing = issuing;
         this.keys = keys;
+        this.books = books;
+    }
+
+    record DisputeRequest(@Pattern(regexp = "[A-Za-z0-9]{12}") String reference,
+                          @Pattern(regexp = "1040|1310|1330|1240") String reason) {}
+
+    /**
+     * A cardholder disputes a purchase: 1040 fraud, 1310 not received, 1330 not as described, 1240 charged twice.
+     * Only in the demo, where anyone may dispute a purchase made with a test card (the cardholder app signs in, in phase 4).
+     */
+    @PostMapping("/v1/disputes")
+    @ResponseStatus(HttpStatus.CREATED)
+    IssuerBooks.DisputeView dispute(@Valid @RequestBody DisputeRequest r) {
+        if (!props.demo()) {
+            throw ApiException.notFound("disputes");
+        }
+        return books.dispute(r.reference(), r.reason());
+    }
+
+    /** Collect clearing files and settlement reports, and send chargebacks, now (it also runs on a schedule). */
+    @PostMapping("/internal/v1/clearing/run")
+    void clearingNow() {
+        books.cycle();
+    }
+
+    record Books(String party, long total, java.util.Map<String, Long> accounts) {}
+
+    /** Kestrel Bank's books, for anyone to see that they balance. Accounts are named by id only. */
+    @GetMapping("/v1/books")
+    Books books() {
+        return new Books("kestrel", books.ledger().total(), books.ledger().balances(""));
     }
 
     record OpenRequest(@NotBlank String name, @Pattern(regexp = "DEBIT|CREDIT") String kind,

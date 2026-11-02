@@ -26,13 +26,48 @@ class AcquirerController {
     private final AcquirerStore store;
     private final Authorising authorising;
     private final Reversing reversing;
+    private final AcquirerBooks books;
     private final TraceReporter trace;
 
-    AcquirerController(AcquirerStore store, Authorising authorising, Reversing reversing, TraceReporter trace) {
+    AcquirerController(AcquirerStore store, Authorising authorising, Reversing reversing, AcquirerBooks books, TraceReporter trace) {
         this.store = store;
         this.authorising = authorising;
         this.reversing = reversing;
+        this.books = books;
         this.trace = trace;
+    }
+
+    /** Present, collect, settle and pay out now (it also runs on a schedule). */
+    @PostMapping("/internal/v1/clearing/run")
+    void clearingNow() {
+        books.cycle();
+    }
+
+    @GetMapping("/internal/v1/merchants/{mid}/payouts")
+    List<AcquirerBooks.Payout> payouts(@PathVariable String mid) {
+        return books.payouts(mid);
+    }
+
+    record Evidence(@NotBlank @Size(max = 2000) String evidence) {}
+
+    /** The merchant answers a chargeback: the evidence goes to the issuer as a representment in the next clearing file. */
+    @PostMapping("/internal/v1/disputes/{id}/answer")
+    AcquirerBooks.DisputeView answer(@PathVariable String id, @Valid @RequestBody Evidence e) {
+        return books.answer(id, e.evidence());
+    }
+
+    /** The merchant accepts a chargeback: the cardholder keeps the money. */
+    @PostMapping("/internal/v1/disputes/{id}/accept")
+    AcquirerBooks.DisputeView accept(@PathVariable String id) {
+        return books.accept(id);
+    }
+
+    record Books(String party, long total, Map<String, Long> accounts) {}
+
+    /** Railpay Acquiring's books, for anyone to see that they balance. */
+    @GetMapping("/v1/books")
+    Books books() {
+        return new Books("railpay-acquiring", books.ledger().total(), books.ledger().balances(""));
     }
 
     record OnboardRequest(@NotBlank @Size(max = 60) String name, @Pattern(regexp = "[0-9]{4}") String mcc,

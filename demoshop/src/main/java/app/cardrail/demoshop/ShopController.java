@@ -112,6 +112,33 @@ class ShopController {
                 .body(r.amount() == null ? Map.of() : Map.of("amount", r.amount())).retrieve().body(JsonNode.class));
     }
 
+    /** Chargebacks against the shop's payments. */
+    @GetMapping("/shop/v1/disputes")
+    JsonNode disputes() {
+        return call(() -> railpay.get().uri("/v2/disputes").retrieve().body(JsonNode.class));
+    }
+
+    record DisputeAnswer(@NotBlank @jakarta.validation.constraints.Size(max = 2000) String evidence) {}
+
+    /** The shop answers a chargeback with its evidence. */
+    @PostMapping("/shop/v1/disputes/{id}/evidence")
+    JsonNode answer(@PathVariable @Pattern(regexp = "dsp_[A-Za-z0-9]+") String id, @Valid @RequestBody DisputeAnswer a) {
+        return call(() -> railpay.post().uri("/v2/disputes/{id}/evidence", id).body(Map.of("evidence", a.evidence()))
+                .retrieve().body(JsonNode.class));
+    }
+
+    /** The shop accepts a chargeback. */
+    @PostMapping("/shop/v1/disputes/{id}/accept")
+    JsonNode accept(@PathVariable @Pattern(regexp = "dsp_[A-Za-z0-9]+") String id) {
+        return call(() -> railpay.post().uri("/v2/disputes/{id}/accept", id).retrieve().body(JsonNode.class));
+    }
+
+    /** What Railpay paid the shop. */
+    @GetMapping("/shop/v1/payouts")
+    JsonNode payouts() {
+        return call(() -> railpay.get().uri("/v2/payouts").retrieve().body(JsonNode.class));
+    }
+
     /** Railpay's webhooks. Believed only with a valid, recent signature. */
     @PostMapping("/shop/v1/webhooks")
     ResponseEntity<Void> webhook(@RequestHeader(value = "Railpay-Signature", required = false) String signature,

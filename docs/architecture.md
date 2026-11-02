@@ -177,3 +177,45 @@ As in Sprout, services are built separately but run in hosts, one JVM per failur
 | network | Railnet, trace | 155 MB |
 | issuing | Kestrel Bank | 138 MB |
 | **Total** | | **461 MB** |
+
+## After the payment: clearing and settlement
+
+```mermaid
+sequenceDiagram
+  participant A as Railpay Acquiring
+  participant N as Railnet
+  participant K as Kestrel Bank
+  participant B as Settlement bank
+  Note over A: captured sales and refunds since the last file
+  A->>N: clearing file (sale $19.99, ref 630612000123)
+  Note over N: matches an approved authorisation, no more than approved;<br/>interchange $0.22 (debit cap), fee 3c each side
+  N->>K: clearing file (the same records, interchange filled in)
+  Note over K: posts the purchase, releases the hold
+  Note over N: cut-off: each member's position, net
+  K->>B: pays $19.99 - $0.22 + $0.03
+  B->>A: receives $19.99 - $0.22 - $0.03
+  Note over A: pays the shop $19.99 - $0.50 (2.5% MDR)
+```
+
+- **Clearing** ([ADR-010](decisions.md#adr-010-clearing)): the acquirer presents what was captured (the captured
+  amount, so a partial capture releases the rest of the hold at the issuer) and approved refunds. Railnet refuses
+  anything it didn't approve, anything for more than approved, and anything presented before.
+- **Settlement**: at each cut-off Railnet settles every member's net position through the settlement bank, and
+  checks the positions add up to exactly the fees it earned. Each member reads its settlement report and books it.
+- **Payouts** ([ADR-011](decisions.md#adr-011-payouts)): the shop is paid what settled, less its fee.
+- **Disputes**: a cardholder disputes a cleared purchase; Kestrel Bank gives the money back at once and sends a
+  chargeback in its own clearing file; Railpay tells the shop (a webhook); the shop answers with evidence (sent as a
+  representment, which charges the cardholder again) or accepts it.
+- **Holds** an issuer approved but that are never cleared are released after 7 days.
+
+### Who earns what on a $100 debit sale
+
+| Party | Gets | Pays |
+|---|---|---|
+| Shop | $97.50 | MDR $2.50 |
+| Railpay Acquiring | MDR $2.50 | interchange $0.26, Railnet fee $0.13 |
+| Kestrel Bank | interchange $0.26 | Railnet fee $0.13 |
+| Railnet | $0.26 in fees | |
+
+Each party's books: [`/api/books/kestrel`](https://cards-saiworks.nncs.in/api/books/kestrel),
+`/api/books/railnet`, `/api/books/railpay-acquiring`. Each adds up to zero.

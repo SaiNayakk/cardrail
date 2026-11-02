@@ -9,6 +9,8 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
  * @param hashKey       HMAC key (base64) that turns a card number into the id it is looked up by
  * @param cvk           card verification key (base64): CVV2s are derived from it, never stored
  * @param demo          whether the published test cards exist (and are listed)
+ * @param networkUrl    Railnet's internal API: clearing files and settlement reports
+ * @param holdDays      how long an approval's hold lasts if it is never cleared
  */
 @ConfigurationProperties("issuer")
 public record IssuerProperties(
@@ -20,5 +22,7 @@ public record IssuerProperties(
         String cvk,
         String traceUrl,
         String internalKey,
-        boolean demo) {
+        boolean demo,
+        String networkUrl,
+        Integer holdDays) {
 }

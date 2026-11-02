@@ -28,12 +28,52 @@ class GatewayController {
 
     private final Merchants merchants;
     private final Payments payments;
+    private final Disputes disputes;
     private final Idempotency idempotency;
 
-    GatewayController(Merchants merchants, Payments payments, Idempotency idempotency) {
+    GatewayController(Merchants merchants, Payments payments, Disputes disputes, Idempotency idempotency) {
         this.merchants = merchants;
         this.payments = payments;
+        this.disputes = disputes;
         this.idempotency = idempotency;
+    }
+
+    @GetMapping("/v2/disputes")
+    PaymentList listDisputes(@RequestHeader(value = "Authorization", required = false) String authorization) {
+        return new PaymentList("list", disputes.list(merchants.authenticate(authorization).id()));
+    }
+
+    @GetMapping("/v2/disputes/{id}")
+    Disputes.DisputeView dispute(@RequestHeader(value = "Authorization", required = false) String authorization, @PathVariable String id) {
+        return disputes.view(merchants.authenticate(authorization).id(), id);
+    }
+
+    record Evidence(@NotBlank @Size(max = 2000) String evidence) {}
+
+    /** Answers a dispute with evidence (a delivery record, a signed receipt): the cardholder's bank decides. */
+    @PostMapping("/v2/disputes/{id}/evidence")
+    Disputes.DisputeView evidence(@RequestHeader(value = "Authorization", required = false) String authorization,
+                                  @PathVariable String id, @Valid @RequestBody Evidence body) {
+        return disputes.answer(merchants.authenticate(authorization), id, body.evidence());
+    }
+
+    /** Accepts a dispute: the cardholder keeps the money. */
+    @PostMapping("/v2/disputes/{id}/accept")
+    Disputes.DisputeView acceptDispute(@RequestHeader(value = "Authorization", required = false) String authorization,
+                                       @PathVariable String id) {
+        return disputes.accept(merchants.authenticate(authorization), id);
+    }
+
+    @GetMapping("/v2/payouts")
+    PaymentList payouts(@RequestHeader(value = "Authorization", required = false) String authorization) {
+        return new PaymentList("list", disputes.payouts(merchants.authenticate(authorization).id()));
+    }
+
+    /** The acquirer tells Railpay about chargebacks and payouts. */
+    @PostMapping("/internal/v1/notifications")
+    ResponseEntity<Void> notified(@RequestBody com.fasterxml.jackson.databind.JsonNode event) {
+        disputes.notified(event);
+        return ResponseEntity.noContent().build();
     }
 
     record CreatePayment(@NotNull @Min(1) @Max(99_999_999L) Long amount, @NotBlank String currency,

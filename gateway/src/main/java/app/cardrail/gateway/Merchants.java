@@ -53,6 +53,11 @@ public class Merchants {
                 .param(id).query(Merchant.class).optional();
     }
 
+    public Optional<Merchant> byMid(String mid) {
+        return jdbc.sql("select id, name, acquirer_mid, secret_key_hint, publishable_key, webhook_url from merchants where acquirer_mid = ?")
+                .param(mid).query(Merchant.class).optional();
+    }
+
     public Optional<Merchant> byPublishableKey(String key) {
         return jdbc.sql("select id, name, acquirer_mid, secret_key_hint, publishable_key, webhook_url from merchants where publishable_key = ?")
                 .param(key).query(Merchant.class).optional();

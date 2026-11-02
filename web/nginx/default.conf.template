@@ -70,6 +70,34 @@ server {
         add_header Cache-Control "no-store" always;
     }
 
+    # Each party's books, to see that they balance
+    location = /api/books/kestrel {
+        set $issuer http://${ISSUING}:8205;
+        rewrite ^ /v1/books break;
+        proxy_pass $issuer;
+        add_header Cache-Control "no-store" always;
+    }
+    location = /api/books/railnet {
+        set $network http://${NETWORK}:8204;
+        rewrite ^ /v1/books break;
+        proxy_pass $network;
+        add_header Cache-Control "no-store" always;
+    }
+    location = /api/books/railpay-acquiring {
+        set $acquirer http://${ACQUIRING}:8203;
+        rewrite ^ /v1/books break;
+        proxy_pass $acquirer;
+        add_header Cache-Control "no-store" always;
+    }
+
+    # A cardholder disputes a purchase with Kestrel Bank (demo only: anyone may, for a test card)
+    location = /api/issuer/disputes {
+        set $issuer http://${ISSUING}:8205;
+        rewrite ^ /v1/disputes break;
+        proxy_pass $issuer;
+        add_header Cache-Control "no-store" always;
+    }
+
     location /api/network/ {
         set $network http://${NETWORK}:8204;
         rewrite ^/api/network/(.*)$ /v1/$1 break;
