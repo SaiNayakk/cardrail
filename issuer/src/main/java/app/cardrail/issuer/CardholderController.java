@@ -35,14 +35,17 @@ class CardholderController {
     private final Acs acs;
     private final Risk risk;
     private final IssuerBooks books;
+    private final Statements statements;
     private final String challengePage;
 
-    CardholderController(IssuerProperties props, Cardholders cardholders, Acs acs, Risk risk, IssuerBooks books) throws IOException {
+    CardholderController(IssuerProperties props, Cardholders cardholders, Acs acs, Risk risk, IssuerBooks books, Statements statements)
+            throws IOException {
         this.props = props;
         this.cardholders = cardholders;
         this.acs = acs;
         this.risk = risk;
         this.books = books;
+        this.statements = statements;
         // not under static/: in a shared host every service would serve it
         this.challengePage = new ClassPathResource("issuer/challenge.html").getContentAsString(StandardCharsets.UTF_8);
     }
@@ -130,6 +133,35 @@ class CardholderController {
             throw ApiException.notFound("purchase " + r.reference());
         }
         return books.dispute(r.reference(), r.reason());
+    }
+
+    // ---- credit card statements and payments
+
+    @GetMapping("/v1/cardholder/statements")
+    List<Statements.Statement> statements(@RequestHeader(value = "Authorization", required = false) String auth) {
+        return statements.list(cardholders.accountOf(cardholders.cardFor(auth)));
+    }
+
+    record Pay(@Min(1) @Max(10_000_000) long amountCents) {}
+
+    record Paid(long owedCents) {}
+
+    /** Pays towards the credit card, from the cardholder's bank account elsewhere. */
+    @PostMapping("/v1/cardholder/payments")
+    Paid pay(@RequestHeader(value = "Authorization", required = false) String auth, @Valid @RequestBody Pay r) {
+        return new Paid(statements.pay(cardholders.accountOf(cardholders.cardFor(auth)), r.amountCents()));
+    }
+
+    /** Ends the cycle now and makes the statement: the demo's way to see a month pass. Not for shared cards. */
+    @PostMapping("/v1/cardholder/statements")
+    @ResponseStatus(HttpStatus.CREATED)
+    Statements.Statement closeStatement(@RequestHeader(value = "Authorization", required = false) String auth) {
+        if (!props.demo()) {
+            throw ApiException.notFound("statements");
+        }
+        UUID card = cardholders.cardFor(auth);
+        cardholders.ownCardOnly(card);
+        return statements.closeNow(cardholders.accountOf(card));
     }
 
     // ---- step-up, in the app

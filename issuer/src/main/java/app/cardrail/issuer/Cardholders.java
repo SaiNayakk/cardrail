@@ -186,6 +186,14 @@ public class Cardholders {
         return new Replacement(card, session(card.cardId()));
     }
 
+    public UUID accountOf(UUID cardId) {
+        return jdbc.sql("select account_id from cards where id = ?").param(cardId).query(UUID.class).single();
+    }
+
+    void ownCardOnly(UUID cardId) {
+        ownCard(cardId);
+    }
+
     /** Shared test cards are for looking at and paying with; changing them would change them for everyone. */
     private void ownCard(UUID cardId) {
         if (risk.controls(cardId).shared()) {

@@ -51,6 +51,8 @@ services:
       ISSUER_NETWORK_URL: http://network:8204
       # pre-prod runs the clearing day fast: files every few seconds, settlement every 15
       ISSUER_CLEARING_EVERY: 5s
+      ISSUER_STATEMENT_CYCLE: 10m
+      ISSUER_PAYMENT_DUE_AFTER: 5m
     healthcheck:
       test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:8205/actuator/health/readiness | grep -q UP"]
       interval: 3s

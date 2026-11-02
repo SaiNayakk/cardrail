@@ -40,6 +40,9 @@ issuer:
   hold-days: ${ISSUER_HOLD_DAYS:7}
   # how often Kestrel Bank collects its clearing files and settlement reports, and sends its chargebacks
   clearing-every: ${ISSUER_CLEARING_EVERY:30s}
+  # a credit card's statement cycle, and how long after it closes the payment is due
+  statement-cycle: ${ISSUER_STATEMENT_CYCLE:30d}
+  payment-due-after: ${ISSUER_PAYMENT_DUE_AFTER:21d}
 
 cardrail:
   internal-key: ${CARDRAIL_INTERNAL_KEY:}
