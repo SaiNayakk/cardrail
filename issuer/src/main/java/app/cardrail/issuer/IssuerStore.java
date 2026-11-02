@@ -53,6 +53,10 @@ public class IssuerStore {
         return id;
     }
 
+    public void markReplacement(UUID newCard, UUID oldCard) {
+        jdbc.sql("update cards set replaces = ? where id = ?").params(oldCard, newCard).update();
+    }
+
     public Optional<Card> cardByPanHash(byte[] panHash) {
         return jdbc.sql("select id, account_id, bin, last4, expiry, status, label from cards where pan_hash = ?")
                 .param(panHash).query(Card.class).optional();
@@ -96,6 +100,12 @@ public class IssuerStore {
                 select id, account_id, kind, response_code, auth_code, amount_cents, hold_cents, status from authorisations
                 where acquirer_id = ? and rrn = ? for update""")
                 .params(acquirerId, rrn).query(Authorisation.class).optional();
+    }
+
+    /** Why a decision was made: the risk score, its reasons, and whether the cardholder had confirmed the payment. */
+    public void annotate(String acquirerId, String rrn, int score, String reasons, boolean authenticated) {
+        jdbc.sql("update authorisations set fraud_score = ?, risk_reasons = ?, authenticated = ? where acquirer_id = ? and rrn = ? and fraud_score is null")
+                .params(score, reasons, authenticated, acquirerId, rrn).update();
     }
 
     /** A decline the network overrode while standing in for us: approved and held after all. */
