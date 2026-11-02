@@ -8,7 +8,7 @@ address is `cards-saiworks.nncs.in`, a Cloudflare tunnel of cardrail's own with 
 |---|---|---|
 | Runs | Kestrel Bank, Meridian (`banks`) | Gateway, vault, acquirer, demo shop, Railnet, trace (`rails`) |
 | Started by | Backseat app `cardrail` (`~/cardrail/start.sh`) | Docker Compose `cardrail-live` ([`deploy/laptop/compose.yml`](https://github.com/SaiNayakk/cardrail/blob/main/deploy/laptop/compose.yml)) |
-| Database | `cardrail` in Sprout's Postgres, role `cardrail`, at most 15 connections | the same, on the laptop |
+| Database | `cardrail` in Sprout's Postgres, role `cardrail`, at most 17 connections | the same, on the laptop |
 | Memory cap | 400 MB: JVM, Postgres backends, edge, connector | 700 MB of Docker |
 | Cell status | `http://<phone>:8209/cell/status` | `http://<laptop>:8209/cell/status` |
 
