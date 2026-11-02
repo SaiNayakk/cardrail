@@ -228,8 +228,15 @@ public class Authoriser {
         return response;
     }
 
-    private static String merchant(IsoMessage m) {
-        return m.has(43) ? m.get(43).trim() : null;
+    /** Field 43 is the name (25), city (13) and country (2), padded: kept as "name, city" for the cardholder to read. */
+    static String merchant(IsoMessage m) {
+        if (!m.has(43)) {
+            return null;
+        }
+        String f = m.get(43);
+        String name = f.substring(0, Math.min(25, f.length())).trim();
+        String city = f.length() > 25 ? f.substring(25, Math.min(38, f.length())).trim() : "";
+        return city.isEmpty() ? name : name + ", " + city;
     }
 
     private static String authCode() {
