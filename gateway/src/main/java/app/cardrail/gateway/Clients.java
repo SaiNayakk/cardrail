@@ -16,10 +16,16 @@ public class Clients {
 
     private final RestClient vault;
     private final RestClient acquirer;
+    private final RestClient directory;
 
     public Clients(GatewayProperties props) {
         this.vault = CommonWeb.internalClient(props.vaultUrl(), props.internalKey(), Duration.ofSeconds(3));
         this.acquirer = CommonWeb.internalClient(props.acquirerUrl(), props.internalKey(), props.acquirerTimeout());
+        this.directory = CommonWeb.internalClient(props.networkUrl(), props.internalKey(), Duration.ofSeconds(8));
+    }
+
+    public RestClient directory() {
+        return directory;
     }
 
     public RestClient vault() {

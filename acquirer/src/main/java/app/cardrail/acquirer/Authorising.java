@@ -37,7 +37,12 @@ public class Authorising {
 
     /** A purchase, or (with {@code originalRrn}) a refund of one. */
     public record Request(String mid, String tid, String pan, String expiry, String cvv2, long amountCents,
-                          String currency, String rrn, String originalRrn) {
+                          String currency, String rrn, String originalRrn, String authenticationId, String authenticationValue) {
+
+        public Request(String mid, String tid, String pan, String expiry, String cvv2, long amountCents, String currency, String rrn,
+                       String originalRrn) {
+            this(mid, tid, pan, expiry, cvv2, amountCents, currency, rrn, originalRrn, null, null);
+        }
 
         boolean refund() {
             return originalRrn != null;
@@ -94,7 +99,13 @@ public class Authorising {
         }
 
         Map<String, String> field48 = new LinkedHashMap<>();
-        field48.put(Subelements.ECOMMERCE_SECURITY, "210");   // channel encrypted, cardholder not authenticated
+        boolean authenticated = r.authenticationValue() != null && r.authenticationId() != null;
+        // channel encrypted; the cardholder authenticated by their bank (212) or not (210)
+        field48.put(Subelements.ECOMMERCE_SECURITY, authenticated ? "212" : "210");
+        if (authenticated) {
+            field48.put(Subelements.AUTHENTICATION_VALUE, r.authenticationValue());
+            field48.put(Subelements.AUTHENTICATION_ID, r.authenticationId());
+        }
         if (r.cvv2() != null && !r.refund()) {
             field48.put(Subelements.CVV2, r.cvv2());
         }

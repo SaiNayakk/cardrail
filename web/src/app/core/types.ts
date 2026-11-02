@@ -84,6 +84,63 @@ export interface Problem {
   detail?: string;
 }
 
+export interface Payout {
+  id: string;
+  object: 'payout';
+  amount: number;
+  sales: number;
+  refunds: number;
+  fees: number;
+  disputes: number;
+  createdAt: string;
+}
+
+export interface PayoutListResponse {
+  object: 'list';
+  data: Payout[];
+}
+
+export type DisputeStatus = 'needs_response' | 'under_review' | 'won' | 'lost';
+
+export interface Dispute {
+  id: string;
+  object: 'dispute';
+  payment: string;
+  amount: number;
+  reason: string;
+  reasonCode: string;
+  status: DisputeStatus;
+  createdAt: string;
+}
+
+export interface DisputeListResponse {
+  object: 'list';
+  data: Dispute[];
+}
+
+export interface DisputeEvidenceRequest {
+  evidence: string;
+}
+
+export interface IssuerDisputeRequest {
+  reference: string;
+  reason: string;
+}
+
+export interface IssuerDisputeResponse {
+  id: string;
+  rrn: string;
+  amountCents: number;
+  reasonCode: string;
+  status: string;
+}
+
+export interface PartyBook {
+  party: string;
+  total: number;
+  accounts: Record<string, number>;
+}
+
 export interface TestCard {
   number: string;
   expiry: string;

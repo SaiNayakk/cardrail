@@ -40,6 +40,7 @@ class PaymentsApiTest {
     static final ObjectMapper JSON = new ObjectMapper();
     static final AtomicInteger authorisations = new AtomicInteger();
     static final AtomicInteger merchantsMade = new AtomicInteger();
+    static final java.util.concurrent.atomic.AtomicBoolean stepUpConfirmed = new java.util.concurrent.atomic.AtomicBoolean();
     static final java.util.List<String> disputeAnswers = new java.util.concurrent.CopyOnWriteArrayList<>();
     static final java.util.List<Map.Entry<String, String>> webhooks = new java.util.concurrent.CopyOnWriteArrayList<>();
     static final HttpServer fakes;
@@ -55,7 +56,8 @@ class PaymentsApiTest {
                 if (token.equals("tok_missing")) {
                     reply(ex, 404, Map.of("code", "not_found"));
                 } else {
-                    String pan = token.endsWith("decline") ? "2860010000000020" : token.endsWith("unknown") ? "2860010000009997" : "2860010000000012";
+                    String pan = token.endsWith("decline") ? "2860010000000020" : token.endsWith("unknown") ? "2860010000009997"
+                            : token.endsWith("stepup") ? "2860010000000061" : "2860010000000012";
                     reply(ex, 200, Map.of("pan", pan, "expiry", "3012", "cvc", "123", "cardRef", "crd_" + pan));
                 }
             });
@@ -82,7 +84,10 @@ class PaymentsApiTest {
                 JsonNode body = JSON.readTree(ex.getRequestBody());
                 String pan = body.get("pan").asText();
                 String rrn = body.get("rrn").asText();
-                if (pan.endsWith("9997")) {
+                if (pan.endsWith("0061") && !body.has("authenticationValue")) {
+                    reply(ex, 200, Map.of("rrn", rrn, "stan", "000001", "status", "DECLINED", "responseCode", "1A",
+                            "responseText", "Cardholder authentication required"));
+                } else if (pan.endsWith("9997")) {
                     reply(ex, 200, Map.of("rrn", rrn, "stan", "000001", "status", "UNKNOWN", "responseText", "No answer from the network"));
                 } else if (pan.endsWith("0020")) {
                     reply(ex, 200, Map.of("rrn", rrn, "stan", "000001", "status", "DECLINED", "responseCode", "51", "responseText", "Insufficient funds"));
@@ -93,6 +98,15 @@ class PaymentsApiTest {
             fakes.createContext("/internal/v1/disputes/", ex -> {
                 disputeAnswers.add(ex.getRequestURI().getPath());
                 reply(ex, 200, Map.of("status", "REPRESENTING"));
+            });
+            fakes.createContext("/internal/v1/directory/authentications", ex -> {
+                if (ex.getRequestMethod().equals("POST")) {
+                    reply(ex, 200, Map.of("issuerId", "286001", "id", "acs_test", "status", "C", "challengePath", "/acs/challenge/acs_test"));
+                } else {
+                    reply(ex, 200, stepUpConfirmed.get()
+                            ? Map.of("id", "acs_test", "status", "Y", "value", "A".repeat(28))
+                            : Map.of("id", "acs_test", "status", "PENDING"));
+                }
             });
             fakes.createContext("/hooks", ex -> {
                 webhooks.add(Map.entry(ex.getRequestHeaders().getFirst("Railpay-Signature"),
@@ -122,6 +136,7 @@ class PaymentsApiTest {
         String fake = "http://127.0.0.1:" + fakes.getAddress().getPort();
         registry.add("gateway.vault-url", () -> fake);
         registry.add("gateway.acquirer-url", () -> fake);
+        registry.add("gateway.network-url", () -> fake);
         registry.add("gateway.webhook-every", () -> "1h");
         registry.add("gateway.resolve-every", () -> "1h");
     }
@@ -145,6 +160,60 @@ class PaymentsApiTest {
         secretKey = created.secretKey();
         webhookSecret = created.webhookSecret();
         webhooks.clear();
+    }
+
+    // Version 3: step-up
+
+    @Test
+    void v3WaitsForTheCardholderToConfirmThenAuthorisesAgain() throws Exception {
+        stepUpConfirmed.set(false);
+        var created = http.exchange("/v3/payments", HttpMethod.POST,
+                new HttpEntity<>(Map.of("amount", 1999, "currency", "usd", "source", "tok_stepup"), headers(null)), String.class);
+        checkedV3("POST", "/payments", created);
+        JsonNode waiting = JSON.readTree(created.getBody());
+        assertThat(waiting.get("status").asText()).isEqualTo("requires_action");
+        assertThat(waiting.get("nextAction").get("url").asText()).isEqualTo("/acs/challenge/acs_test");
+        String id = waiting.get("id").asText();
+        String firstReference = waiting.get("reference").asText();
+
+        // version 2 never sees the new status
+        assertThat(JSON.readTree(v2("GET", "/payments/" + id, null, null).getBody()).get("status").asText()).isEqualTo("pending");
+
+        var early = http.exchange("/v3/payments/" + id + "/confirm", HttpMethod.POST, new HttpEntity<>(null, headers(null)), String.class);
+        assertThat(early.getStatusCode().value()).isEqualTo(409);
+
+        stepUpConfirmed.set(true);
+        var confirmed = http.exchange("/v3/payments/" + id + "/confirm", HttpMethod.POST, new HttpEntity<>(null, headers(null)), String.class);
+        checkedV3("POST", "/payments/" + id + "/confirm", confirmed);
+        JsonNode done = JSON.readTree(confirmed.getBody());
+        assertThat(done.get("status").asText()).isEqualTo("captured");
+        assertThat(done.get("reference").asText()).isNotEqualTo(firstReference);
+        assertThat(done.has("nextAction")).isFalse();
+
+        var again = http.exchange("/v3/payments/" + id + "/confirm", HttpMethod.POST, new HttpEntity<>(null, headers(null)), String.class);
+        assertThat(JSON.readTree(again.getBody()).get("reference").asText()).isEqualTo(done.get("reference").asText());
+    }
+
+    @Test
+    void v2DeclinesWhatV3WouldStepUp() throws Exception {
+        JsonNode payment = JSON.readTree(v2("POST", "/payments", Map.of("amount", 1999, "currency", "usd", "source", "tok_stepup"), null).getBody());
+        assertThat(payment.get("status").asText()).isEqualTo("declined");
+        assertThat(payment.get("responseCode").asText()).isEqualTo("1A");
+    }
+
+    static final com.atlassian.oai.validator.OpenApiInteractionValidator CONTRACT_V3 =
+            com.atlassian.oai.validator.OpenApiInteractionValidator.createForSpecificationUrl(
+                            java.nio.file.Path.of("../contracts/gateway-v3.yaml").toUri().toString())
+                    .withBasePathOverride("/v3")
+                    .build();
+
+    private static void checkedV3(String method, String path, ResponseEntity<String> response) {
+        var simple = com.atlassian.oai.validator.model.SimpleResponse.Builder.status(response.getStatusCode().value())
+                .withContentType(String.valueOf(response.getHeaders().getContentType()))
+                .withBody(response.getBody())
+                .build();
+        var report = CONTRACT_V3.validateResponse("/v3" + path, com.atlassian.oai.validator.model.Request.Method.valueOf(method), simple);
+        assertThat(report.getMessages()).as("v3 contract violations for %s %s", method, path).isEmpty();
     }
 
     // Phase 3: disputes and payouts, as the acquirer tells Railpay about them

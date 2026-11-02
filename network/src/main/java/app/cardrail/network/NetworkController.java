@@ -18,12 +18,31 @@ class NetworkController {
     private final Clearing clearing;
     private final Settlement settlement;
     private final Ledger ledger;
+    private final Directory directory;
 
-    NetworkController(Routing routing, Clearing clearing, Settlement settlement, JdbcClient jdbc) {
+    NetworkController(Routing routing, Clearing clearing, Settlement settlement, Directory directory, JdbcClient jdbc) {
         this.routing = routing;
         this.clearing = clearing;
         this.settlement = settlement;
+        this.directory = directory;
         this.ledger = new Ledger(jdbc);
+    }
+
+    record StartAuthentication(@jakarta.validation.constraints.Pattern(regexp = "[0-9]{12,19}") String pan,
+                               @jakarta.validation.constraints.Pattern(regexp = "[0-9]{4}") String expiry,
+                               @jakarta.validation.constraints.Min(1) long amountCents,
+                               @jakarta.validation.constraints.NotBlank String merchant, String reference) {}
+
+    /** The directory server: a gateway asks for the cardholder to be authenticated by the card's issuer. */
+    @PostMapping("/internal/v1/directory/authentications")
+    Directory.Started authenticate(@jakarta.validation.Valid @RequestBody StartAuthentication r) {
+        return directory.start(r.pan(), r.expiry(), r.amountCents(), r.merchant(), r.reference());
+    }
+
+    @GetMapping("/internal/v1/directory/authentications/{issuerId}/{id}")
+    Directory.Result authentication(@org.springframework.web.bind.annotation.PathVariable String issuerId,
+                                    @org.springframework.web.bind.annotation.PathVariable String id) {
+        return directory.result(issuerId, id);
     }
 
     /** A member sends a clearing file (text, fixed width). The answer says what was accepted and what wasn't, and why. */

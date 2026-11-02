@@ -20,20 +20,14 @@ import { Loader } from '../core/loader';
 import { formatCents } from '../core/money';
 import { isRetryable, messageOf } from '../core/problem';
 import {
-  canRefundPayment,
-  createRefundRequestId,
-  parseRefundAmount,
-  remainingRefundableCents,
-} from '../core/refund';
-import {
   Payment,
-  PaymentListResponse,
   Product,
   ShopConfig,
   TestCard,
   WebhookEvent,
 } from '../core/types';
 import { CopyButton } from '../ui/copy-button';
+import { OrdersList } from '../ui/orders-list';
 
 interface HostedFormReadyMessage {
   type: 'cardrail:ready';
@@ -60,7 +54,7 @@ type HostedFormMessage =
 
 @Component({
   selector: 'app-shop',
-  imports: [RouterLink, CopyButton, DatePipe],
+  imports: [RouterLink, CopyButton, DatePipe, OrdersList],
   changeDetection: ChangeDetectionStrategy.OnPush,
   template: `
     <main class="container">
@@ -253,149 +247,7 @@ type HostedFormMessage =
             </section>
 
             <!-- Your orders section -->
-            <section class="card orders-card" aria-labelledby="heading-orders">
-              <div class="orders-header">
-                <div>
-                  <h2 id="heading-orders" class="card-title">Your orders</h2>
-                  <p class="muted small">Recent payments processed by the shop.</p>
-                </div>
-                <button
-                  type="button"
-                  class="btn btn-secondary btn-sm"
-                  [disabled]="paymentsLoader.loading()"
-                  (click)="reloadOrders()"
-                >
-                  {{ paymentsLoader.loading() ? 'Refreshing…' : 'Refresh' }}
-                </button>
-              </div>
-
-              @if (paymentsLoader.loading() && !paymentsLoader.value()) {
-                <p class="muted small">Loading orders…</p>
-              } @else if (paymentsLoader.error(); as err) {
-                <div class="card-error-notice" role="alert">
-                  <p class="error-msg">{{ err }}</p>
-                  <button type="button" class="btn btn-secondary btn-sm" (click)="reloadOrders()">
-                    Retry
-                  </button>
-                </div>
-              } @else if (paymentsLoader.value(); as resp) {
-                @if (!resp.data || resp.data.length === 0) {
-                  <p class="muted small">No orders recorded yet. Complete a checkout above to create your first order.</p>
-                } @else {
-                  <div class="orders-list">
-                    @for (order of resp.data; track order.id) {
-                      <article class="order-item">
-                        <div class="order-main-row">
-                          <div class="order-desc-col">
-                            <span class="order-desc">{{ order.description || 'Order' }}</span>
-                            <span class="order-card-meta mono small faint">
-                              {{ order.card.brand }} &bull;&bull;&bull;&bull; {{ order.card.last4 }} &middot; {{ order.createdAt | date: 'shortTime' }}
-                            </span>
-                          </div>
-
-                          <div class="order-amount-col">
-                            <span class="order-amount mono num">{{ formatMoney(order.amount) }}</span>
-                            <span
-                              class="badge"
-                              [class.badge-approved]="order.status === 'captured' || order.status === 'authorised'"
-                              [class.badge-declined]="order.status === 'declined' || order.status === 'failed'"
-                              [class.badge-unknown]="order.status === 'reversed' || order.status === 'voided' || order.status === 'unknown'"
-                            >
-                              {{ order.status }}
-                            </span>
-                          </div>
-                        </div>
-
-                        <div class="order-actions-row">
-                          <a [routerLink]="['/trace', order.reference]" class="small">View trace &rarr;</a>
-                          @if (canRefund(order)) {
-                            <button
-                              type="button"
-                              class="btn btn-secondary btn-sm"
-                              (click)="openRefund(order)"
-                            >
-                              Refund
-                            </button>
-                          }
-                        </div>
-
-                        <!-- Inline refund form -->
-                        @if (activeRefundPaymentId() === order.id) {
-                          <div class="refund-inline-form card-subtle">
-                            <div class="refund-form-header">
-                              <label [for]="'refund-input-' + order.id">
-                                Refund amount (up to {{ formatMoney(remainingCents(order)) }})
-                              </label>
-                              <span class="muted small">Default: all that is left</span>
-                            </div>
-
-                            <div class="refund-input-row">
-                              <input
-                                [id]="'refund-input-' + order.id"
-                                type="text"
-                                [value]="refundInputVal()"
-                                (input)="onRefundInputChange($event)"
-                                placeholder="Leave blank for all left"
-                                class="refund-input mono"
-                              />
-                              <button
-                                type="button"
-                                class="btn btn-sm"
-                                [disabled]="refunding() || !isRefundInputValid(order)"
-                                (click)="submitRefund(order)"
-                              >
-                                {{ refunding() ? 'Submitting…' : 'Confirm refund' }}
-                              </button>
-                              <button
-                                type="button"
-                                class="btn btn-secondary btn-sm"
-                                [disabled]="refunding()"
-                                (click)="closeRefund()"
-                              >
-                                Cancel
-                              </button>
-                            </div>
-
-                            @if (refundError()) {
-                              <p class="error-msg small">{{ refundError() }}</p>
-                            }
-                            @if (refundRetryable()) {
-                              <p class="small muted">
-                                Network issue. You can safely retry; your request ID is preserved.
-                              </p>
-                            }
-                          </div>
-                        }
-
-                        <!-- Refunds list under payment -->
-                        @if (order.refunds && order.refunds.length > 0) {
-                          <div class="refunds-sublist">
-                            <span class="faint small">Refunds:</span>
-                            @for (ref of order.refunds; track ref.id) {
-                              <div class="refund-subitem">
-                                <span class="mono num">{{ formatMoney(ref.amount) }}</span>
-                                <span
-                                  class="badge"
-                                  [class.badge-approved]="ref.status === 'succeeded'"
-                                  [class.badge-declined]="ref.status === 'failed'"
-                                >
-                                  {{ ref.status }}
-                                </span>
-                                <span class="mono small faint">{{ ref.createdAt | date: 'shortTime' }}</span>
-                                <a [routerLink]="['/trace', ref.reference]" class="small">Trace &rarr;</a>
-                                @if (ref.status === 'failed' && ref.failureReason) {
-                                  <span class="small error-text">({{ ref.failureReason }})</span>
-                                }
-                              </div>
-                            }
-                          </div>
-                        }
-                      </article>
-                    }
-                  </div>
-                }
-              }
-            </section>
+            <app-orders-list #ordersList />
           </div>
 
           <!-- Right Column: What Railpay told the shop and Test cards -->
@@ -519,22 +371,6 @@ type HostedFormMessage =
     .outcome-trace-cta { margin-top: 12px; }
     .btn-trace { background-color: var(--ink); color: var(--bg); font-weight: 600; width: 100%; }
     .btn-trace:hover { background-color: var(--ink-muted); color: var(--bg); }
-    .orders-header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 16px; gap: 12px; }
-    .orders-list { display: flex; flex-direction: column; gap: 12px; }
-    .order-item { padding: 12px; background-color: var(--surface-subtle); border: 1px solid var(--line); border-radius: var(--radius-sm); display: flex; flex-direction: column; gap: 8px; }
-    .order-main-row { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; }
-    .order-desc-col { display: flex; flex-direction: column; gap: 2px; }
-    .order-desc { font-weight: 600; color: var(--ink); font-size: 0.9375rem; }
-    .order-amount-col { display: flex; align-items: center; gap: 8px; }
-    .order-amount { font-weight: 600; }
-    .order-actions-row { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding-top: 4px; }
-    .refund-inline-form { margin-top: 8px; padding: 10px 12px; display: flex; flex-direction: column; gap: 8px; }
-    .refund-form-header { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; }
-    .refund-form-header label { margin-bottom: 0; }
-    .refund-input-row { display: flex; gap: 8px; align-items: center; }
-    .refund-input { max-width: 140px; }
-    .refunds-sublist { margin-top: 6px; padding-top: 6px; border-top: 1px solid var(--line); display: flex; flex-direction: column; gap: 4px; }
-    .refund-subitem { display: flex; align-items: center; gap: 8px; font-size: 0.8125rem; }
     .webhooks-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 4px; }
     .webhook-explainer { margin-bottom: 12px; }
     .webhooks-list { display: flex; flex-direction: column; gap: 8px; max-height: 320px; overflow-y: auto; }
@@ -558,10 +394,10 @@ export class Shop implements OnInit, OnDestroy {
   private readonly sanitizer = inject(DomSanitizer);
 
   @ViewChild('cardIframe') private iframeRef?: ElementRef<HTMLIFrameElement>;
+  @ViewChild('ordersList') private ordersList?: OrdersList;
 
   protected readonly configLoader = new Loader<ShopConfig>(() => this.api.getShopConfig());
   protected readonly cardsLoader = new Loader<TestCard[]>(() => this.api.getTestCards());
-  protected readonly paymentsLoader = new Loader<PaymentListResponse>(() => this.api.getPayments());
 
   protected readonly selectedProductId = signal<string>('');
   protected readonly quantity = signal<number>(1);
@@ -571,14 +407,6 @@ export class Shop implements OnInit, OnDestroy {
   protected readonly checkoutError = signal<string>('');
   protected readonly paymentOutcome = signal<Payment | null>(null);
   protected readonly canRetryCurrentOrder = signal<boolean>(false);
-
-  // Refund state
-  protected readonly activeRefundPaymentId = signal<string | null>(null);
-  protected readonly refundInputVal = signal<string>('');
-  protected readonly refunding = signal<boolean>(false);
-  protected readonly refundError = signal<string>('');
-  protected readonly refundRetryable = signal<boolean>(false);
-  private currentRefundRequestId = createRefundRequestId();
 
   // Webhooks state
   protected readonly webhooks = signal<WebhookEvent[]>([]);
@@ -634,7 +462,6 @@ export class Shop implements OnInit, OnDestroy {
         this.selectedProductId.set(cfg.products[0].id);
       }
     });
-    void this.paymentsLoader.reload();
     this.startWebhookPolling();
   }
 
@@ -734,7 +561,7 @@ export class Shop implements OnInit, OnDestroy {
       });
       this.paymentOutcome.set(payment);
       this.startNewOrder();
-      void this.paymentsLoader.reload();
+      void this.ordersList?.reload();
       this.fetchWebhooks();
     } catch (err: unknown) {
       this.checkoutError.set(messageOf(err));
@@ -745,79 +572,6 @@ export class Shop implements OnInit, OnDestroy {
       }
     } finally {
       this.paying.set(false);
-    }
-  }
-
-  protected reloadOrders(): void {
-    void this.paymentsLoader.reload();
-  }
-
-  protected openRefund(payment: Payment): void {
-    const leftCents = remainingRefundableCents(payment);
-    this.activeRefundPaymentId.set(payment.id);
-    this.refundInputVal.set((leftCents / 100).toFixed(2));
-    this.refundError.set('');
-    this.refundRetryable.set(false);
-    this.currentRefundRequestId = createRefundRequestId();
-  }
-
-  protected closeRefund(): void {
-    this.activeRefundPaymentId.set(null);
-    this.refundInputVal.set('');
-    this.refundError.set('');
-    this.refundRetryable.set(false);
-  }
-
-  protected onRefundInputChange(event: Event): void {
-    const target = event.target as HTMLInputElement;
-    this.refundInputVal.set(target.value);
-    this.refundError.set('');
-  }
-
-  protected isRefundInputValid(payment: Payment): boolean {
-    const maxCents = remainingRefundableCents(payment);
-    const res = parseRefundAmount(this.refundInputVal(), maxCents);
-    return res.valid;
-  }
-
-  protected remainingCents(payment: Payment): number {
-    return remainingRefundableCents(payment);
-  }
-
-  protected canRefund(payment: Payment): boolean {
-    return canRefundPayment(payment);
-  }
-
-  protected async submitRefund(payment: Payment): Promise<void> {
-    const maxCents = remainingRefundableCents(payment);
-    const parsed = parseRefundAmount(this.refundInputVal(), maxCents);
-    if (!parsed.valid) {
-      this.refundError.set(parsed.error ?? 'Invalid refund amount.');
-      return;
-    }
-
-    this.refunding.set(true);
-    this.refundError.set('');
-    this.refundRetryable.set(false);
-
-    try {
-      await this.api.refundPayment(payment.id, {
-        amount: parsed.cents,
-        requestId: this.currentRefundRequestId,
-      });
-      this.closeRefund();
-      await this.paymentsLoader.reload();
-      this.fetchWebhooks();
-    } catch (err: unknown) {
-      this.refundError.set(messageOf(err));
-      if (isRetryable(err)) {
-        this.refundRetryable.set(true);
-      } else {
-        this.currentRefundRequestId = createRefundRequestId();
-        this.refundRetryable.set(false);
-      }
-    } finally {
-      this.refunding.set(false);
     }
   }
 

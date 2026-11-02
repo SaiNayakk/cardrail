@@ -57,6 +57,46 @@ export function getLaneIndex(partyId: string, lanes: TraceLane[] = DEFAULT_LANES
   return index >= 0 ? index : 0;
 }
 
+export interface SameLaneLayout {
+  laneIndex: number;
+  centerPercent: number;
+  leftPercent: number;
+  widthPercent: number;
+}
+
+/**
+ * Computes layout geometry for a note where from equals to (a party noting something it did itself).
+ * Renders as a marker centered on that party's lane guideline rather than a zero-length arrow.
+ */
+export function layoutSameLaneNote(
+  eventOrIndex: TraceEvent | number,
+  lanesOrCount: TraceLane[] | number = DEFAULT_LANES,
+): SameLaneLayout {
+  let laneIndex: number;
+  let laneCount: number;
+
+  if (typeof eventOrIndex === 'number') {
+    laneIndex = eventOrIndex;
+    laneCount = typeof lanesOrCount === 'number' ? lanesOrCount : lanesOrCount.length;
+  } else {
+    const lanes = Array.isArray(lanesOrCount) ? lanesOrCount : DEFAULT_LANES;
+    laneIndex = getLaneIndex(eventOrIndex.from, lanes);
+    laneCount = lanes.length;
+  }
+
+  const safeCount = Math.max(1, laneCount);
+  const safeIndex = Math.max(0, Math.min(laneIndex, safeCount - 1));
+  const laneWidth = 100 / safeCount;
+  const centerPercent = (safeIndex + 0.5) * laneWidth;
+
+  return {
+    laneIndex: safeIndex,
+    centerPercent,
+    leftPercent: safeIndex * laneWidth,
+    widthPercent: laneWidth,
+  };
+}
+
 /** Constructs arrow layout metrics and display values for a single trace event. */
 export function layoutEventArrow(
   event: TraceEvent,
@@ -75,8 +115,18 @@ export function layoutEventArrow(
 
   const startPercent = ((fromIndex + 0.5) / count) * 100;
   const endPercent = ((toIndex + 0.5) / count) * 100;
-  const leftPercent = Math.min(startPercent, endPercent);
-  const widthPercent = Math.abs(endPercent - startPercent);
+
+  let leftPercent: number;
+  let widthPercent: number;
+
+  if (direction === 'self') {
+    const sameLane = layoutSameLaneNote(fromIndex, count);
+    leftPercent = sameLane.leftPercent;
+    widthPercent = sameLane.widthPercent;
+  } else {
+    leftPercent = Math.min(startPercent, endPercent);
+    widthPercent = Math.abs(endPercent - startPercent);
+  }
 
   let label = event.summary;
   if (event.kind === 'iso8583' && event.mti) {

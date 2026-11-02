@@ -12,6 +12,16 @@ export const routes: Routes = [
     title: 'Demo shop · cardrail',
   },
   {
+    path: 'dashboard',
+    loadComponent: () => import('./pages/dashboard').then((m) => m.Dashboard),
+    title: 'Shop dashboard · cardrail',
+  },
+  {
+    path: 'books',
+    loadComponent: () => import('./pages/books').then((m) => m.Books),
+    title: 'Books · cardrail',
+  },
+  {
     path: 'test-cards',
     loadComponent: () => import('./pages/test-cards').then((m) => m.TestCards),
     title: 'Test cards · cardrail',

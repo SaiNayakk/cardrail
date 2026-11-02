@@ -130,8 +130,51 @@ import { RouterLink } from '@angular/router';
           </div>
         </section>
 
+        <!-- 6. After the payment: clearing and settlement -->
+        <section class="card concept-card" aria-labelledby="heading-clearing">
+          <h2 id="heading-clearing">After the payment: clearing and settlement</h2>
+          <p>
+            Authorisation holds the funds; clearing and settlement move the money. The acquirer bundles captured purchases into a clearing file for Railnet. Railnet calculates interchange (the fee the acquirer pays the cardholder's bank) and its own network fee, and notifies the issuer to post the charge. At cut-off, all net obligations are settled through reserve accounts at a central settlement bank. The shop receives a payout of settled sales less its fee (2.5% MDR).
+          </p>
+
+          <div class="clearing-diagram" aria-hidden="true">
+            <div class="clearing-row">
+              <div class="step-box">
+                <span class="mono step-tag">Acquirer</span>
+                <span class="step-desc">Sends clearing file</span>
+              </div>
+              <span class="flow-arrow">&rarr;</span>
+              <div class="step-box step-box-accent">
+                <span class="mono step-tag">Railnet</span>
+                <span class="step-desc">Computes interchange &amp; fees</span>
+              </div>
+              <span class="flow-arrow">&rarr;</span>
+              <div class="step-box">
+                <span class="mono step-tag">Issuer</span>
+                <span class="step-desc">Posts purchase to account</span>
+              </div>
+            </div>
+            <div class="settlement-bridge">
+              <div class="settlement-box">
+                <span class="mono step-tag">Settlement Bank</span>
+                <span class="step-desc">Transfers net balances between member reserve accounts</span>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <!-- 7. Disputes -->
+        <section class="card concept-card" aria-labelledby="heading-disputes">
+          <h2 id="heading-disputes">Disputes</h2>
+          <p>
+            A cardholder can dispute a purchase through their bank if they did not recognise the charge, never received their items, found them not as described, or were charged twice. The issuer credits the cardholder and issues a chargeback to the shop. The merchant can accept the dispute to close it, or challenge it by submitting evidence such as delivery signatures and proof of fulfillment. If the evidence confirms the sale was valid, the dispute is won and the money is returned to the shop.
+          </p>
+        </section>
+
         <div class="guide-footer-cta">
           <a routerLink="/shop" class="btn">Try a payment in the shop &rarr;</a>
+          <a routerLink="/dashboard" class="btn btn-secondary">Shop dashboard</a>
+          <a routerLink="/books" class="btn btn-secondary">View books</a>
           <a routerLink="/traces" class="btn btn-secondary">Inspect live traces</a>
         </div>
       </div>
@@ -215,6 +258,43 @@ import { RouterLink } from '@angular/router';
       color: var(--accent);
       font-weight: 600;
       padding: 0 2px;
+    }
+
+    .clearing-diagram {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      padding: 12px 14px;
+      background-color: var(--surface-subtle);
+      border: 1px solid var(--line);
+      border-radius: var(--radius-sm);
+      overflow-x: auto;
+      margin-top: 6px;
+    }
+
+    .clearing-row {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .settlement-bridge {
+      display: flex;
+      justify-content: center;
+      padding-top: 4px;
+    }
+
+    .settlement-box {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+      max-width: 420px;
+      width: 100%;
+      text-align: center;
+      padding: 8px 12px;
+      background-color: var(--surface);
+      border: 1.5px dashed var(--line-strong);
+      border-radius: var(--radius-sm);
     }
 
     .guide-footer-cta {

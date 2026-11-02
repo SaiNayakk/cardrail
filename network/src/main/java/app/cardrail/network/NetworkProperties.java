@@ -27,8 +27,10 @@ public record NetworkProperties(
      * @param standInMaxCents     the most one stand-in approval may be for
      * @param standInDailyCount   how many stand-in approvals one card may get in a day
      * @param standInDailyCents   how much one card may be approved for by stand-in in a day
+     * @param acsUrl              the issuer's access control server, for step-up through the directory
      */
-    public record Endpoint(String host, int port, Long standInMaxCents, Integer standInDailyCount, Long standInDailyCents) {
+    public record Endpoint(String host, int port, Long standInMaxCents, Integer standInDailyCount, Long standInDailyCents,
+                           String acsUrl) {
 
         public boolean standsIn() {
             return standInMaxCents != null && standInMaxCents > 0;

@@ -19,6 +19,13 @@ describe('webhook event type plain words names', () => {
     expect(formatEventType('refund.pending')).toBe('Refund pending');
   });
 
+  it('formats dispute and payout event types into plain words', () => {
+    expect(formatEventType('dispute.created')).toBe('Dispute created');
+    expect(formatEventType('dispute.won')).toBe('Dispute won');
+    expect(formatEventType('dispute.lost')).toBe('Dispute lost');
+    expect(formatEventType('payout.paid')).toBe('Payout paid');
+  });
+
   it('formats unknown event types gracefully using word boundary replacement', () => {
     expect(formatEventType('charge.dispute.created')).toBe('Charge dispute created');
     expect(formatEventType('merchant_account_updated')).toBe('Merchant account updated');
@@ -75,6 +82,44 @@ describe('getEventAmount', () => {
       },
     };
     expect(getEventAmount(refundEv)).toBe(300);
+  });
+
+  it('extracts amount from dispute and payout event data', () => {
+    const disputeEv: WebhookEvent = {
+      id: 'evt_dsp',
+      object: 'event',
+      type: 'dispute.created',
+      createdAt: '2026-11-02T10:10:00Z',
+      data: {
+        id: 'dsp_1',
+        object: 'dispute',
+        payment: 'pay_1',
+        amount: 450,
+        reason: 'not received',
+        reasonCode: '1310',
+        status: 'needs_response',
+        createdAt: '2026-11-02T10:10:00Z',
+      },
+    };
+    expect(getEventAmount(disputeEv)).toBe(450);
+
+    const payoutEv: WebhookEvent = {
+      id: 'evt_po',
+      object: 'event',
+      type: 'payout.paid',
+      createdAt: '2026-11-02T10:15:00Z',
+      data: {
+        id: 'po_1',
+        object: 'payout',
+        amount: 9750,
+        sales: 10000,
+        refunds: 0,
+        fees: 250,
+        disputes: 0,
+        createdAt: '2026-11-02T10:15:00Z',
+      },
+    };
+    expect(getEventAmount(payoutEv)).toBe(9750);
   });
 
   it('returns undefined when no amount is present', () => {

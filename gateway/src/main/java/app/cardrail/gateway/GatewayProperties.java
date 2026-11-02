@@ -12,6 +12,7 @@ import java.time.Duration;
 public record GatewayProperties(
         String vaultUrl,
         String acquirerUrl,
+        String networkUrl,
         Duration acquirerTimeout,
         String keyMode,
         String traceUrl,

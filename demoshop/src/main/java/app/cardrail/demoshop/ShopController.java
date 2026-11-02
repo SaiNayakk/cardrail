@@ -91,16 +91,25 @@ class ShopController {
     JsonNode checkout(@Valid @RequestBody Checkout c) {
         Product product = PRODUCTS.stream().filter(p -> p.id().equals(c.product())).findFirst()
                 .orElseThrow(() -> ApiException.invalid("unknown_product", "the shop doesn't sell that"));
-        return call(() -> railpay.post().uri("/v2/payments").header("Idempotency-Key", "demoshop-" + c.orderId())
+        return call(() -> railpay.post().uri("/v3/payments").header("Idempotency-Key", "demoshop-" + c.orderId())
                 .body(Map.of("amount", product.priceCents() * c.quantity(), "currency", "usd", "source", c.token(),
                         "description", c.quantity() + " x " + product.name(), "capture", true))
                 .retrieve().body(JsonNode.class));
     }
 
+    /**
+     * The shopper confirmed with their bank (step-up): ask Railpay to finish the payment. Railpay checks with the bank
+     * itself; the shop only says "they're done". Safe to repeat.
+     */
+    @PostMapping("/shop/v1/payments/{id}/confirm")
+    JsonNode confirm(@PathVariable @Pattern(regexp = "pay_[A-Za-z0-9]+") String id) {
+        return call(() -> railpay.post().uri("/v3/payments/{id}/confirm", id).retrieve().body(JsonNode.class));
+    }
+
     /** The shop's recent payments, as Railpay has them: the shop's own view of its takings. */
     @GetMapping("/shop/v1/payments")
     JsonNode payments() {
-        return call(() -> railpay.get().uri("/v2/payments?limit=20").retrieve().body(JsonNode.class));
+        return call(() -> railpay.get().uri("/v3/payments?limit=20").retrieve().body(JsonNode.class));
     }
 
     record RefundRequest(@Min(1) Long amount, @Pattern(regexp = "[A-Za-z0-9-]{8,64}") String requestId) {}
