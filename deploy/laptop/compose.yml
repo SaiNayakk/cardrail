@@ -1,0 +1,97 @@
+# The laptop's live cell (cell b, ADR-015): the rails in one JVM, the public edge, and a connector of cardrail's own
+# Cloudflare tunnel. Its database is the `cardrail` database in Sprout's Postgres on this laptop.
+#
+#   deploy/laptop/up.sh vX.Y.Z      (a tagged release only; never beside a pre-prod on this laptop)
+#
+# Memory: at most 700 MB for all of cardrail here (rails 384 MB when holding the phone's half too, edge 32 MB,
+# connector 64 MB). Secrets are in .env next to this file (made by deploy/secrets.py, never committed or printed).
+name: cardrail-live
+
+services:
+  rails:
+    image: cardrail-host:${CARDRAIL_VERSION:?set by up.sh}
+    command: ["rails"]
+    restart: unless-stopped
+    env_file: [.env]
+    environment:
+      CARDRAIL_WATCH: "true"
+      CARDRAIL_CELL: b
+      CARDRAIL_STATE_FILE: /state/cell-state
+      CARDRAIL_PEER_LAN: ${PHONE_LAN:?}
+      CARDRAIL_PEER_STATUS_URL: http://${PHONE_LAN}:8209/cell/status
+      CARDRAIL_DB_URL: jdbc:postgresql://${CARDRAIL_PG_HOST:?}:${CARDRAIL_PG_PORT:-5432}/cardrail
+      CARDRAIL_PEER_DB_URL: jdbc:postgresql://${CARDRAIL_PEER_PG_HOST:?}:${CARDRAIL_PEER_PG_PORT:-5432}/cardrail
+      # one heap for the rails; holding the phone's half too, the whole system fits in the same limit
+      XMX: 176m
+      LOG_FORMAT: ecs
+      DB_POOL_SIZE: "2"
+      DB_POOL_MIN_IDLE: "0"
+      DB_POOL_IDLE_TIMEOUT: "10000"
+      CARDRAIL_DEMO: "true"
+      TRACE_URL: http://127.0.0.1:8206
+      ISSUER_DB_URL: jdbc:postgresql://${CARDRAIL_PG_HOST}:${CARDRAIL_PG_PORT:-5432}/cardrail?currentSchema=issuer
+      MERIDIAN_DB_URL: jdbc:postgresql://${CARDRAIL_PG_HOST}:${CARDRAIL_PG_PORT:-5432}/cardrail?currentSchema=meridian
+      TRACE_DB_URL: jdbc:postgresql://${CARDRAIL_PG_HOST}:${CARDRAIL_PG_PORT:-5432}/cardrail?currentSchema=trace
+      NETWORK_DB_URL: jdbc:postgresql://${CARDRAIL_PG_HOST}:${CARDRAIL_PG_PORT:-5432}/cardrail?currentSchema=network
+      ACQUIRER_DB_URL: jdbc:postgresql://${CARDRAIL_PG_HOST}:${CARDRAIL_PG_PORT:-5432}/cardrail?currentSchema=acquirer
+      VAULT_DB_URL: jdbc:postgresql://${CARDRAIL_PG_HOST}:${CARDRAIL_PG_PORT:-5432}/cardrail?currentSchema=vault
+      GATEWAY_DB_URL: jdbc:postgresql://${CARDRAIL_PG_HOST}:${CARDRAIL_PG_PORT:-5432}/cardrail?currentSchema=gateway
+      GATEWAY_BIND: 0.0.0.0
+      VAULT_BIND: 0.0.0.0
+      ACQUIRER_BIND: 0.0.0.0
+      DEMOSHOP_BIND: 0.0.0.0
+      NETWORK_BIND: 0.0.0.0
+      NETWORK_ISO_BIND: 0.0.0.0
+      TRACE_BIND: 0.0.0.0
+      ISSUER_BIND: 0.0.0.0
+      ISSUER_ISO_BIND: 0.0.0.0
+      MERIDIAN_BIND: 0.0.0.0
+      MERIDIAN_ISO_BIND: 0.0.0.0
+      # the banks, on the phone (while this cell holds them, the host points these here instead)
+      NETWORK_KESTREL_HOST: ${PHONE_LAN}
+      NETWORK_KESTREL_ACS_URL: http://${PHONE_LAN}:8205
+      ACQUIRER_MERIDIAN_HOST: ${PHONE_LAN}
+      ACQUIRER_MERIDIAN_URL: http://${PHONE_LAN}:8208
+    volumes:
+      - state:/state
+    # what the phone's half calls here: the gateway, the network, the trace, and its edge the rest; the cell status
+    ports:
+      - "8201-8204:8201-8204"
+      - "8206-8207:8206-8207"
+      - "8209:8209"
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:8209/cell/status >/dev/null"]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+    mem_limit: 384m
+
+  web:
+    image: cardrail-web:${CARDRAIL_VERSION}
+    restart: unless-stopped
+    entrypoint: ["/bin/sh", "/edge.sh"]
+    environment:
+      CELL: b
+      LOCAL: rails
+      PEER: ${PHONE_LAN}
+      STATE_FILE: /state/cell-state
+      TEMPLATE: /etc/nginx/templates/default.conf.template
+      CONF: /etc/nginx/conf.d/default.conf
+      NGINX: nginx
+    volumes:
+      - state:/state:ro
+      - ../edge.sh:/edge.sh:ro
+    ports:
+      - "127.0.0.1:8280:80"
+    mem_limit: 32m
+
+  tunnel:
+    image: cloudflare/cloudflared:2025.8.1
+    restart: unless-stopped
+    command: ["tunnel", "--no-autoupdate", "--config", "/etc/cloudflared/config.yml", "run"]
+    volumes:
+      - ./tunnel:/etc/cloudflared:ro
+    mem_limit: 64m
+
+volumes:
+  state:

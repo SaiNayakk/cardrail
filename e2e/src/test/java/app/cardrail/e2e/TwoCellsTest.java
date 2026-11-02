@@ -76,9 +76,12 @@ class TwoCellsTest {
         assertThat(edge.pay("sticker", 1, fresh).get("status").asText()).isEqualTo("captured");
     }
 
+    /** An issued card as the hosted form takes it: the bank gives the expiry as YYMM, the form takes MM/YY. */
     private static JsonNode cardFor(JsonNode issued) {
-        return Edge.JSON.valueToTree(Map.of("number", issued.get("pan").asText(), "expiry", issued.get("expiry").asText(),
-                "cvv2", issued.get("cvv2").asText()));
+        String expiry = issued.get("expiry").asText();
+        return Edge.JSON.valueToTree(Map.of("number", issued.get("pan").asText(),
+                "expiry", expiry.substring(2) + "/" + expiry.substring(0, 2), "cvv2", issued.get("cvv2").asText(),
+                "id", java.util.UUID.randomUUID().toString()));
     }
 
     /** A query's answer once replication has had a few seconds to carry it. */

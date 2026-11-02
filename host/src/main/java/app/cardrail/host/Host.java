@@ -63,13 +63,45 @@ public final class Host {
             System.err.println("Usage: java -jar cardrail-host.jar <acquiring|network|issuing|banks|rails|cell|migrate|replicate|promote>");
             System.exit(2);
         }
-        String[] rest = args.length > 0 ? Arrays.copyOfRange(args, 1, args.length) : args;
+        List<String> rest = new ArrayList<>(Arrays.asList(args.length > 0 ? Arrays.copyOfRange(args, 1, args.length) : args));
         try {
-            start(group, rest);
-        } catch (RuntimeException e) {
+            if (!"true".equals(System.getenv("CARDRAIL_WATCH"))) {
+                start(group, rest.toArray(String[]::new));
+                return;
+            }
+            // A live cell: what it runs depends on whether it holds the other's half, or the other holds its own
+            CellWatch watch = new CellWatch(System.getenv());
+            watch.checkBeforeStart();
+            String running = watch.groupFor(group);
+            if (running.equals("fenced")) {
+                watch.start(running);
+                Thread.currentThread().join();
+            }
+            if (running.equals("cell")) {
+                rest.addAll(localAddresses(System.getenv()));
+            }
+            start(running, rest.toArray(String[]::new));
+            watch.start(running);
+        } catch (Exception e) {
             log.error("The {} host couldn't start; exiting so it gets restarted", group, e);
             System.exit(1);
         }
+    }
+
+    /**
+     * Holding the other cell's half, every address that pointed at it points here instead. Arguments outrank the
+     * environment, so each setting naming the other cell's address is given again with this one's.
+     */
+    static List<String> localAddresses(Map<String, String> env) {
+        String peer = env.getOrDefault("CARDRAIL_PEER_LAN", "");
+        if (peer.isBlank()) {
+            return List.of();
+        }
+        return env.entrySet().stream()
+                .filter(e -> !e.getKey().startsWith("CARDRAIL_") && e.getValue().contains(peer))
+                .map(e -> "--" + e.getKey() + "=" + e.getValue().replace(peer, "127.0.0.1"))
+                .sorted()
+                .toList();
     }
 
     /** One of a live cell's database commands (CellAdmin); 0 when it worked. */

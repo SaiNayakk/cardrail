@@ -57,6 +57,9 @@ jobs:
             closedloop:
               - *common
               - 'closedloop/**'
+            host:
+              - *common
+              - 'host/**'
 
   build:
     needs: changes

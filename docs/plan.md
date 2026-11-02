@@ -12,7 +12,7 @@ Each phase ends with something that can be shown working.
 | 5. Closed loop | Meridian cards take the three-party path; [a comparison](closed-loop.md) of who earns what and who sees what | in review |
 | 6. Sprout as a merchant | Sprout customers add money by card through the hosted form | after phase 8: needs cardrail running |
 | 7. Hardening | Performance (PERF-xx) and chaos suites in pre-prod | chaos since phase 2; PERF-01 added |
-| 8. Two cells | Running on the phone and the laptop beside Sprout, replicated both ways, failing over and back | planned |
+| 8. Two cells | The banks on the phone and the rails on the laptop beside Sprout, each copying the other, failing over and back ([ADR-015](decisions.md#adr-015-two-cells)) | in progress |
 
 ## Release flow
 
