@@ -55,6 +55,15 @@ Pre-prod runs the clearing day fast (files every 5 s, settlement every 15 s), so
 | CLOSED-01 | A Meridian card goes from the acquirer straight to Meridian and back, with no network hop; Meridian keeps its 3% discount and its books balance |
 | CLOSED-02 | Meridian declines over a cardmember's limit, as the issuer it is |
 
+## Performance
+
+| Id | Hypothesis | Last result (CI pre-prod, 2026-11-02) |
+|---|---|---|
+| PERF-01 | At a steady 5 checkouts a second, each tokenising a card and paying through the gateway, acquirer, Railnet and Kestrel Bank (with capture and trace reports), p95 stays under 1 s and under 1% fail | p95 **142 ms**, **0%** failed; hosts used 183 MB (acquiring), 172 MB (network, with Meridian), 150 MB (issuing) |
+
+Script: [`preprod/k6/perf-01-checkout.js`](https://github.com/SaiNayakk/cardrail/blob/main/preprod/k6/perf-01-checkout.js). Each run's
+k6 summary is kept with the CI run's evidence.
+
 ## Chaos experiments
 
 They pause real containers in pre-prod, then check that nobody is charged for a payment the merchant was told

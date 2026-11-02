@@ -80,6 +80,15 @@ export class Api {
     return this.get<WebhookEvent[]>('/api/shop/v1/webhooks');
   }
 
+  /** Every published test card: Kestrel Bank's, then Meridian's (the closed loop). */
+  async getAllTestCards(): Promise<TestCard[]> {
+    const [kestrel, meridian] = await Promise.all([
+      this.getTestCards(),
+      this.get<TestCard[]>('/api/meridian/test-cards').catch(() => [] as TestCard[]),
+    ]);
+    return [...kestrel, ...meridian];
+  }
+
   getTestCards(): Promise<TestCard[]> {
     return this.get<TestCard[]>('/api/test-cards');
   }

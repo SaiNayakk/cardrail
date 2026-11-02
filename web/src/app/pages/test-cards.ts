@@ -130,7 +130,7 @@ import { CopyButton } from '../ui/copy-button';
 })
 export class TestCards {
   private readonly api = inject(Api);
-  protected readonly cardsLoader = new Loader<TestCard[]>(() => this.api.getTestCards());
+  protected readonly cardsLoader = new Loader<TestCard[]>(() => this.api.getAllTestCards());
 
   protected formatNumber(num: string): string {
     return groupCardNumber(num);

@@ -173,10 +173,10 @@ As in Sprout, services are built separately but run in hosts, one JVM per failur
 
 | Host | Services | Memory |
 |---|---|---|
-| acquiring | gateway, vault, acquirer, demo shop | 168 MB |
-| network | Railnet, trace | 155 MB |
-| issuing | Kestrel Bank | 138 MB |
-| **Total** | | **461 MB** |
+| acquiring | gateway, vault, acquirer, demo shop | 168 MB idle, 183 MB under PERF-01 |
+| network | Railnet, trace, Meridian | 155 MB idle (before Meridian), 172 MB under PERF-01 |
+| issuing | Kestrel Bank | 138 MB idle, 150 MB under PERF-01 |
+| **Total** | | **505 MB** under load |
 
 ## After the payment: clearing and settlement
 

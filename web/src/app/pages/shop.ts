@@ -568,7 +568,7 @@ export class Shop implements OnInit, OnDestroy {
   @ViewChild('challengeCancelBtn') private challengeCancelBtnRef?: ElementRef<HTMLButtonElement>;
 
   protected readonly configLoader = new Loader<ShopConfig>(() => this.api.getShopConfig());
-  protected readonly cardsLoader = new Loader<TestCard[]>(() => this.api.getTestCards());
+  protected readonly cardsLoader = new Loader<TestCard[]>(() => this.api.getAllTestCards());
 
   protected readonly selectedProductId = signal<string>('');
   protected readonly quantity = signal<number>(1);
