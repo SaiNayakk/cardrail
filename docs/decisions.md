@@ -116,3 +116,36 @@ The outbox makes "the payment changed" and "the merchant will be told" one atomi
 timestamp make a captured delivery useless later.
 
 **Lost.** A merchant may get an event twice and must use its id to ignore the repeat.
+
+## ADR-010: Clearing by file, settlement net, every party with its own books { #adr-010-clearing }
+
+**Decision.** After authorisation, money moves the way it does on real card networks: in batches. The acquirer
+sends Railnet a clearing file (fixed-width records, a trailer with a count and a total) of what its merchants
+captured and refunded. Railnet checks every record against an authorisation it approved, for no more than was
+approved, works out interchange (the US debit cap, 0.05% + 21 cents; credit 1.80% + 10 cents) and its own fee,
+and passes each record to the other side. At a cut-off, each member's position is settled net through the
+settlement bank: one payment each way, however many transactions. Every party keeps its own double-entry books,
+and each book always adds up to zero.
+
+**Why.** Dual message (authorise now, clear later) is how card payments really work, and it is where the
+interesting failures are: a capture for less than was authorised, a refund presented twice, a file cut short, a
+chargeback a month later. Records carry the reference (RRN) and the BIN and last four, never the card number:
+every party finds the authorisation a record belongs to by reference. Separate books per party, compared only
+through what they publish (RECON-01, RECON-02), are the only honest way to show that nothing was lost between
+them.
+
+**Lost.** Simplifications: one currency; one acquirer and one issuer; interchange by debit or credit only, not by
+merchant category or card product; a representment ends the dispute (no pre-arbitration or arbitration); members
+share one internal key (each would have its own credentials). In pre-prod the day runs fast: files every 5 s,
+settlement every 15 s.
+
+## ADR-011: Merchants are paid only what has settled { #adr-011-payouts }
+
+**Decision.** The acquirer pays a merchant, after each settlement it books, the sales that settled less refunds,
+its fee (MDR, 2.5% by default) and chargebacks, plus chargebacks won back. Never a negative amount: a merchant
+that owes after chargebacks has it taken from the next payout.
+
+**Why.** Paying before the network pays would have the acquirer lend money to every merchant; paying from settled
+records only means a payout always equals money that arrived. The MDR is the acquirer's income; interchange and
+Railnet's fee are its costs, so on a small debit payment its margin can be negative, which is real and worth seeing
+in the books.
