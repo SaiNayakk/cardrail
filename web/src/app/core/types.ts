@@ -32,6 +32,11 @@ export interface Refund {
   createdAt: string;
 }
 
+export interface NextAction {
+  type: string;
+  url: string;
+}
+
 export interface Payment {
   id: string;
   object: 'payment';
@@ -45,7 +50,8 @@ export interface Payment {
     | 'voided'
     | 'reversed'
     | 'failed'
-    | 'pending';
+    | 'pending'
+    | 'requires_action';
   capture?: boolean;
   amountCaptured?: number;
   amountRefunded?: number;
@@ -56,6 +62,7 @@ export interface Payment {
   responseCode?: string;
   declineReason?: string;
   description?: string;
+  nextAction?: NextAction;
   createdAt: string;
 }
 
@@ -184,3 +191,111 @@ export const PARTY_NAMES: Record<string, string> = {
   kestrel: 'Kestrel Bank (issuer)',
   meridian: 'Meridian',
 };
+
+export interface CardholderSessionRequest {
+  number: string;
+  expiry: string;
+  cvv2: string;
+}
+
+export interface CardholderSessionResponse {
+  token: string;
+  cardId: string;
+  expiresAt: string;
+}
+
+export interface CreateCardRequest {
+  kind: 'DEBIT' | 'CREDIT';
+}
+
+export interface IssuedCardDetails {
+  cardId: string;
+  accountId: string;
+  pan: string;
+  expiry: string;
+  cvv2: string;
+}
+
+export interface CreateCardResponse {
+  card: IssuedCardDetails;
+  session: CardholderSessionResponse;
+}
+
+export type CardholderCardStatus = 'ACTIVE' | 'INACTIVE' | 'BLOCKED' | 'LOST' | 'STOLEN';
+
+export interface CardholderCard {
+  id: string;
+  last4: string;
+  kind: 'DEBIT' | 'CREDIT';
+  status: CardholderCardStatus;
+  expiry: string;
+  shared: boolean;
+  balanceCents: number;
+  availableCents: number;
+  heldCents: number;
+  creditLimitCents: number;
+}
+
+export type CardholderTransactionStatus =
+  | 'APPROVED'
+  | 'DECLINED'
+  | 'REVERSED'
+  | 'CLEARED'
+  | 'EXPIRED';
+
+export interface CardholderTransaction {
+  reference: string;
+  kind: 'PURCHASE' | 'REFUND';
+  merchant: string;
+  amountCents: number;
+  status: CardholderTransactionStatus;
+  responseCode?: string;
+  responseText?: string;
+  fraudScore?: number;
+  riskReasons?: string;
+  authenticated: boolean;
+  disputable: boolean;
+  at: string;
+}
+
+export interface CardholderAuthentication {
+  id: string;
+  amountCents: number;
+  merchant: string;
+  otp: string;
+  expiresAt: string;
+}
+
+export interface CardholderControls {
+  onlineEnabled: boolean;
+  singleLimitCents: number | null;
+  dailyLimitCents: number | null;
+  blockedMccs: string[];
+  stepUpAlways?: boolean;
+  shared?: boolean;
+}
+
+export interface UpdateCardholderControlsRequest {
+  onlineEnabled: boolean;
+  singleLimitCents: number | null;
+  dailyLimitCents: number | null;
+  blockedMccs: string[];
+}
+
+export interface CardholderDisputeRequest {
+  reference: string;
+  reason: '1040' | '1310' | '1330' | '1240' | string;
+}
+
+export interface ReportLostRequest {
+  stolen: boolean;
+}
+
+export interface ReportLostResponse {
+  card: IssuedCardDetails;
+  session: CardholderSessionResponse;
+}
+
+export interface ActivateCardRequest {
+  cvv2: string;
+}

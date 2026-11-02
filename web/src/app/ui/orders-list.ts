@@ -24,6 +24,7 @@ import {
   Payment,
   PaymentListResponse,
 } from '../core/types';
+import { formatPaymentStatus } from '../core/cardholder';
 
 @Component({
   selector: 'app-orders-list',
@@ -76,9 +77,9 @@ import {
                       class="badge"
                       [class.badge-approved]="order.status === 'captured' || order.status === 'authorised'"
                       [class.badge-declined]="order.status === 'declined' || order.status === 'failed'"
-                      [class.badge-unknown]="order.status === 'reversed' || order.status === 'voided' || order.status === 'unknown'"
+                      [class.badge-unknown]="order.status === 'reversed' || order.status === 'voided' || order.status === 'unknown' || order.status === 'requires_action'"
                     >
-                      {{ order.status }}
+                      {{ statusLabel(order.status) }}
                     </span>
                   </div>
                 </div>
@@ -419,5 +420,9 @@ export class OrdersList implements OnInit {
 
   protected formatMoney(cents: number): string {
     return formatCents(cents);
+  }
+
+  protected statusLabel(status: string): string {
+    return formatPaymentStatus(status);
   }
 }

@@ -28,6 +28,11 @@ import {
 } from '../core/types';
 import { CopyButton } from '../ui/copy-button';
 import { OrdersList } from '../ui/orders-list';
+import {
+  confirmPaymentWithRetry,
+  formatPaymentStatus,
+  isStepUpAuthenticationMessage,
+} from '../core/cardholder';
 
 interface HostedFormReadyMessage {
   type: 'cardrail:ready';
@@ -192,25 +197,13 @@ type HostedFormMessage =
                   class="outcome-card"
                   [class.outcome-approved]="p.status === 'captured' || p.status === 'authorised'"
                   [class.outcome-declined]="p.status === 'declined' || p.status === 'failed'"
-                  [class.outcome-unknown]="p.status === 'unknown' || p.status === 'reversed' || p.status === 'voided'"
+                  [class.outcome-unknown]="p.status === 'unknown' || p.status === 'reversed' || p.status === 'voided' || p.status === 'requires_action'"
                   role="status"
                   aria-live="polite"
                 >
                   <div class="outcome-header">
                     <span class="outcome-badge">
-                      @if (p.status === 'captured') {
-                        Payment captured
-                      } @else if (p.status === 'authorised') {
-                        Payment authorised
-                      } @else if (p.status === 'declined') {
-                        Payment declined
-                      } @else if (p.status === 'reversed') {
-                        Payment reversed
-                      } @else if (p.status === 'voided') {
-                        Payment voided
-                      } @else {
-                        Payment status unknown
-                      }
+                      {{ formatStatus(p.status) }}
                     </span>
                     <span class="outcome-time mono small">{{ p.createdAt | date: 'mediumTime' }}</span>
                   </div>
@@ -221,6 +214,27 @@ type HostedFormMessage =
                         Authorisation code:
                         <strong class="mono">{{ p.authCode || 'Approved' }}</strong>
                       </p>
+                    } @else if (p.status === 'requires_action') {
+                      <p>
+                        Waiting for the cardholder to confirm with Kestrel Bank.
+                      </p>
+                      <div class="step-up-actions">
+                        <button
+                          type="button"
+                          class="btn btn-sm"
+                          (click)="resumeChallenge(p)"
+                        >
+                          Continue
+                        </button>
+                        <a
+                          routerLink="/card"
+                          target="_blank"
+                          rel="noopener"
+                          class="btn btn-secondary btn-sm"
+                        >
+                          Open Kestrel Bank app &rarr;
+                        </a>
+                      </div>
                     } @else if (p.status === 'declined') {
                       <p>
                         Reason:
@@ -339,6 +353,71 @@ type HostedFormMessage =
           </div>
         </div>
       }
+
+      <!-- Step-up Challenge Modal Dialog -->
+      @if (showChallengeModal()) {
+        <div class="modal-backdrop" (click)="cancelChallenge()">
+          <div
+            #challengeDialog
+            class="modal-dialog"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="challenge-dialog-title"
+            (click)="$event.stopPropagation()"
+            (keydown)="onChallengeKeydown($event)"
+            tabindex="-1"
+          >
+            <div class="modal-header">
+              <h2 id="challenge-dialog-title" class="modal-title">Confirm with your bank</h2>
+              <button
+                #challengeCancelBtn
+                type="button"
+                class="btn btn-secondary btn-sm"
+                (click)="cancelChallenge()"
+                aria-label="Cancel confirmation"
+              >
+                Cancel
+              </button>
+            </div>
+
+            <div class="challenge-layout">
+              <div class="challenge-iframe-box">
+                @if (challengeIframeUrl(); as url) {
+                  <iframe
+                    #challengeIframe
+                    [src]="url"
+                    title="Confirm with your bank"
+                    class="challenge-iframe"
+                    allow="payment"
+                  ></iframe>
+                }
+                @if (confirmingChallenge()) {
+                  <div class="challenge-overlay" role="status">
+                    <p class="muted">Confirming with Kestrel Bank…</p>
+                  </div>
+                }
+              </div>
+
+              <aside class="challenge-hint-col">
+                <div class="hint-card">
+                  <p class="hint-title">Your code is in the Kestrel Bank app</p>
+                  <p class="muted small">
+                    Approve this payment or check your one-time code in the app.
+                  </p>
+                  <a
+                    routerLink="/card"
+                    target="_blank"
+                    rel="noopener"
+                    class="btn btn-secondary btn-sm hint-btn"
+                  >
+                    Open Kestrel Bank app &rarr;
+                  </a>
+                </div>
+              </aside>
+            </div>
+          </div>
+        </div>
+      }
     </main>
   `,
   styles: `
@@ -368,6 +447,7 @@ type HostedFormMessage =
     .outcome-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; }
     .outcome-badge { font-size: 0.8125rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; }
     .outcome-content p { color: var(--ink); margin-bottom: 14px; }
+    .step-up-actions { display: flex; gap: 8px; align-items: center; margin-bottom: 14px; flex-wrap: wrap; }
     .outcome-trace-cta { margin-top: 12px; }
     .btn-trace { background-color: var(--ink); color: var(--bg); font-weight: 600; width: 100%; }
     .btn-trace:hover { background-color: var(--ink-muted); color: var(--bg); }
@@ -387,6 +467,94 @@ type HostedFormMessage =
     .card-digits { font-size: 0.875rem; font-weight: 600; color: var(--ink); letter-spacing: 0.04em; }
     .card-sub-digits { display: flex; align-items: center; gap: 16px; font-size: 0.8125rem; }
     .sub-digit-item { display: flex; align-items: center; gap: 6px; }
+
+    /* Modal dialog */
+    .modal-backdrop {
+      position: fixed;
+      inset: 0;
+      background: rgba(15, 23, 42, 0.65);
+      z-index: 100;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 16px;
+    }
+    .modal-dialog {
+      background: var(--surface);
+      border: 1px solid var(--line-strong);
+      border-radius: var(--radius-lg);
+      width: 100%;
+      max-width: 780px;
+      max-height: calc(100vh - 32px);
+      overflow-y: auto;
+      padding: 20px;
+      box-shadow: var(--shadow-panel);
+    }
+    .modal-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 16px;
+    }
+    .modal-title {
+      font-size: 1.15rem;
+      margin: 0;
+    }
+    .challenge-layout {
+      display: grid;
+      grid-template-columns: 1fr;
+      gap: 16px;
+    }
+    @media (min-width: 720px) {
+      .challenge-layout {
+        grid-template-columns: 1fr 220px;
+      }
+    }
+    .challenge-iframe-box {
+      position: relative;
+      height: 420px;
+      border: 1px solid var(--line);
+      border-radius: var(--radius-sm);
+      overflow: hidden;
+      background-color: var(--surface-subtle);
+    }
+    .challenge-iframe {
+      width: 100%;
+      height: 420px;
+      border: none;
+      display: block;
+    }
+    .challenge-overlay {
+      position: absolute;
+      inset: 0;
+      background: rgba(255, 255, 255, 0.9);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    .challenge-hint-col {
+      display: flex;
+      flex-direction: column;
+    }
+    .hint-card {
+      padding: 16px;
+      background-color: var(--surface-subtle);
+      border: 1px solid var(--line);
+      border-radius: var(--radius-sm);
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+    .hint-title {
+      font-weight: 600;
+      font-size: 0.9375rem;
+      margin: 0;
+      color: var(--ink);
+    }
+    .hint-btn {
+      width: 100%;
+      text-align: center;
+    }
   `,
 })
 export class Shop implements OnInit, OnDestroy {
@@ -395,6 +563,9 @@ export class Shop implements OnInit, OnDestroy {
 
   @ViewChild('cardIframe') private iframeRef?: ElementRef<HTMLIFrameElement>;
   @ViewChild('ordersList') private ordersList?: OrdersList;
+  @ViewChild('challengeIframe') private challengeIframeRef?: ElementRef<HTMLIFrameElement>;
+  @ViewChild('challengeDialog') private challengeDialogRef?: ElementRef<HTMLDivElement>;
+  @ViewChild('challengeCancelBtn') private challengeCancelBtnRef?: ElementRef<HTMLButtonElement>;
 
   protected readonly configLoader = new Loader<ShopConfig>(() => this.api.getShopConfig());
   protected readonly cardsLoader = new Loader<TestCard[]>(() => this.api.getTestCards());
@@ -407,6 +578,12 @@ export class Shop implements OnInit, OnDestroy {
   protected readonly checkoutError = signal<string>('');
   protected readonly paymentOutcome = signal<Payment | null>(null);
   protected readonly canRetryCurrentOrder = signal<boolean>(false);
+
+  // Step-up challenge state
+  protected readonly showChallengeModal = signal<boolean>(false);
+  protected readonly challengeIframeUrl = signal<SafeResourceUrl | null>(null);
+  protected readonly activeChallengePayment = signal<Payment | null>(null);
+  protected readonly confirmingChallenge = signal<boolean>(false);
 
   // Webhooks state
   protected readonly webhooks = signal<WebhookEvent[]>([]);
@@ -493,6 +670,19 @@ export class Shop implements OnInit, OnDestroy {
     if (event.origin !== window.location.origin) {
       return;
     }
+
+    // Step-up challenge response from Kestrel Bank iframe
+    if (
+      this.showChallengeModal() &&
+      this.challengeIframeRef?.nativeElement?.contentWindow &&
+      event.source === this.challengeIframeRef.nativeElement.contentWindow
+    ) {
+      if (isStepUpAuthenticationMessage(event.data, event.origin, window.location.origin)) {
+        void this.handleChallengeMessage();
+        return;
+      }
+    }
+
     if (this.iframeRef && event.source !== this.iframeRef.nativeElement.contentWindow) {
       return;
     }
@@ -559,6 +749,14 @@ export class Shop implements OnInit, OnDestroy {
         token,
         orderId: this.currentOrderId,
       });
+
+      if (payment.status === 'requires_action' && payment.nextAction?.url) {
+        this.openChallenge(payment);
+        void this.ordersList?.reload();
+        this.fetchWebhooks();
+        return;
+      }
+
       this.paymentOutcome.set(payment);
       this.startNewOrder();
       void this.ordersList?.reload();
@@ -573,6 +771,95 @@ export class Shop implements OnInit, OnDestroy {
     } finally {
       this.paying.set(false);
     }
+  }
+
+  protected openChallenge(payment: Payment): void {
+    this.activeChallengePayment.set(payment);
+    const origin = typeof window !== 'undefined' ? window.location.origin : '';
+    const src = `${payment.nextAction!.url}?origin=${encodeURIComponent(origin)}`;
+    this.challengeIframeUrl.set(this.sanitizer.bypassSecurityTrustResourceUrl(src));
+    this.showChallengeModal.set(true);
+    setTimeout(() => {
+      if (this.challengeCancelBtnRef?.nativeElement) {
+        this.challengeCancelBtnRef.nativeElement.focus();
+      } else if (this.challengeDialogRef?.nativeElement) {
+        this.challengeDialogRef.nativeElement.focus();
+      }
+    }, 50);
+  }
+
+  protected cancelChallenge(): void {
+    const payment = this.activeChallengePayment();
+    this.showChallengeModal.set(false);
+    if (payment) {
+      this.paymentOutcome.set(payment);
+      void this.ordersList?.reload();
+      this.fetchWebhooks();
+    }
+  }
+
+  protected resumeChallenge(payment: Payment): void {
+    this.openChallenge(payment);
+  }
+
+  protected onChallengeKeydown(event: KeyboardEvent): void {
+    if (event.key === 'Escape') {
+      event.preventDefault();
+      this.cancelChallenge();
+      return;
+    }
+    if (event.key === 'Tab') {
+      const dialog = this.challengeDialogRef?.nativeElement;
+      if (!dialog) {
+        return;
+      }
+      const focusables = Array.from(
+        dialog.querySelectorAll<HTMLElement>(
+          'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])',
+        ),
+      );
+      if (focusables.length === 0) {
+        return;
+      }
+      const first = focusables[0];
+      const last = focusables[focusables.length - 1];
+      if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault();
+        last.focus();
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault();
+        first.focus();
+      }
+    }
+  }
+
+  private async handleChallengeMessage(): Promise<void> {
+    const payment = this.activeChallengePayment();
+    if (!payment) {
+      return;
+    }
+
+    this.confirmingChallenge.set(true);
+    try {
+      const outcome = await confirmPaymentWithRetry(this.api, payment.id, 3, 1000);
+      this.showChallengeModal.set(false);
+      this.activeChallengePayment.set(null);
+      this.paymentOutcome.set(outcome);
+      this.startNewOrder();
+      void this.ordersList?.reload();
+      this.fetchWebhooks();
+    } catch (err: unknown) {
+      this.showChallengeModal.set(false);
+      this.checkoutError.set(messageOf(err));
+      this.paymentOutcome.set(payment);
+      void this.ordersList?.reload();
+    } finally {
+      this.confirmingChallenge.set(false);
+    }
+  }
+
+  protected formatStatus(status: string): string {
+    return formatPaymentStatus(status);
   }
 
   protected fetchWebhooks(): void {

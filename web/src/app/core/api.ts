@@ -61,6 +61,13 @@ export class Api {
     return this.post<Payment>('/api/shop/v1/checkout', req);
   }
 
+  confirmPayment(paymentId: string): Promise<Payment> {
+    return this.post<Payment>(
+      `/api/shop/v1/payments/${encodeURIComponent(paymentId)}/confirm`,
+      {},
+    );
+  }
+
   getPayments(): Promise<PaymentListResponse> {
     return this.get<PaymentListResponse>('/api/shop/v1/payments');
   }

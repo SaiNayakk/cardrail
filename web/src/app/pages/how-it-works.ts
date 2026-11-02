@@ -171,8 +171,57 @@ import { RouterLink } from '@angular/router';
           </p>
         </section>
 
+        <!-- 8. Confirming with your bank (step-up) -->
+        <section class="card concept-card" aria-labelledby="heading-step-up">
+          <h2 id="heading-step-up">Confirming with your bank (step-up)</h2>
+          <p>
+            When an online payment triggers security checks, Kestrel Bank asks for step-up confirmation. The shop shows the bank's secure page in a challenge frame. The cardholder checks their Kestrel Bank app for a one-time code or approves the prompt directly. Once confirmed, the bank verifies the authentication and the payment is submitted for authorisation with cryptographic proof.
+          </p>
+
+          <div class="diagram-flow" aria-hidden="true">
+            <div class="step-box">
+              <span class="mono step-tag">Shop</span>
+              <span class="step-desc">Requests checkout</span>
+            </div>
+            <span class="flow-arrow">&rarr;</span>
+            <div class="step-box">
+              <span class="mono step-tag">Railpay</span>
+              <span class="step-desc">Forwards request</span>
+            </div>
+            <span class="flow-arrow">&rarr;</span>
+            <div class="step-box">
+              <span class="mono step-tag">Railnet directory</span>
+              <span class="step-desc">Checks 3-D Secure</span>
+            </div>
+            <span class="flow-arrow">&rarr;</span>
+            <div class="step-box step-box-accent">
+              <span class="mono step-tag">Kestrel Bank's page</span>
+              <span class="step-desc">Challenge frame loaded</span>
+            </div>
+            <span class="flow-arrow">&rarr;</span>
+            <div class="step-box step-box-accent">
+              <span class="mono step-tag">Code in the app</span>
+              <span class="step-desc">Cardholder approves code</span>
+            </div>
+            <span class="flow-arrow">&rarr;</span>
+            <div class="step-box">
+              <span class="mono step-tag">Payment authorised</span>
+              <span class="step-desc">Authorised with proof</span>
+            </div>
+          </div>
+        </section>
+
+        <!-- 9. Your card, your rules -->
+        <section class="card concept-card" aria-labelledby="heading-card-rules">
+          <h2 id="heading-card-rules">Your card, your rules</h2>
+          <p>
+            Cardholders stay in control of their spending through the Kestrel Bank app. You can switch online payments on or off, set per-payment and daily spend limits, and block high-risk merchant categories like gambling or money transfers. If your card is misplaced, freeze it instantly to prevent unauthorised charges. If it is lost or stolen, cancel it immediately to receive a new card number.
+          </p>
+        </section>
+
         <div class="guide-footer-cta">
           <a routerLink="/shop" class="btn">Try a payment in the shop &rarr;</a>
+          <a routerLink="/card" class="btn btn-secondary">Cardholder app</a>
           <a routerLink="/dashboard" class="btn btn-secondary">Shop dashboard</a>
           <a routerLink="/books" class="btn btn-secondary">View books</a>
           <a routerLink="/traces" class="btn btn-secondary">Inspect live traces</a>
