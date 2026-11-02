@@ -4,7 +4,8 @@
 # stopping that app stops all of cardrail here, because everything started here is in its process group.
 #
 # The phone is Sprout's first, so this starter is careful in the ways Sprout's is:
-#   - it waits until the phone has been up 10 minutes, after Sprout's own staged start
+#   - it waits until the phone has been up 10 minutes and Sprout's four hosts and its gateway answer: never in
+#     the same boot wave as Sprout (that once put the phone in a reboot loop); nothing goes in ~/.termux/boot
 #   - it starts nothing while Sprout's cellwatch is TAKING_OVER (its worst memory moment)
 #   - it starts the JVM only with CARDRAIL_MIN_FREE_MB available (default 1450: the 1.2 GB Sprout keeps, plus ours)
 #   - everything runs at a lower priority than the phone's own work
@@ -28,7 +29,14 @@ set +a
 log() { printf '%s %s\n' "$(date -u +%FT%TZ)" "$*"; }
 booted_for() { python3 -c 'import time; print(int(time.clock_gettime(time.CLOCK_BOOTTIME)))'; }
 free_mb() { free -m | awk 'NR==2 {print $7}'; }
-sprout_taking_over() { grep -q TAKING_OVER "$SPROUT_STATUS" 2>/dev/null; }
+sprout_taking_over() {
+    python3 -c 'import json,sys; sys.exit(0 if json.load(open(sys.argv[1])).get("state") == "TAKING_OVER" else 1)' "$SPROUT_STATUS" 2>/dev/null
+}
+# Sprout's four hosts (edge, trading, street, money) and its gateway answering, read only
+sprout_up() {
+    for p in 8101 8103 8107 8106; do curl -fs -m 3 -o /dev/null "http://127.0.0.1:$p/actuator/health" || return 1; done
+    curl -fs -m 3 -o /dev/null http://127.0.0.1:8100/api/marketdata/v1/market
+}
 heap() { if [ "$(cat "$CARDRAIL_STATE_FILE" 2>/dev/null)" = HOLDING ]; then echo "$HOLDING_XMX"; else echo "$XMX"; fi; }
 java_run() {
     nice -n 10 java -XX:+UseSerialGC -Xms16m -Xmx"$(heap)" -XX:MinHeapFreeRatio=10 -XX:MaxHeapFreeRatio=25 -Xss512k \
@@ -40,12 +48,13 @@ java_run() {
 ready() {
     [ "$(booted_for)" -ge "$SETTLE" ] || return 1
     sprout_taking_over && return 1
+    sprout_up || return 1
     pg_isready -q -h 127.0.0.1 -p "${CARDRAIL_PG_PORT:-5432}" || return 1
     [ "$(free_mb)" -ge "$1" ]
 }
 wait_ready() {
     until ready "$1"; do
-        log "waiting: up $(booted_for)s, $(free_mb) MB available, Sprout $(sprout_taking_over && echo taking over || echo settled)"
+        log "waiting: up $(booted_for)s, $(free_mb) MB available, Sprout $(sprout_taking_over && echo taking over || { sprout_up && echo up || echo not up yet; })"
         sleep 30
     done
 }

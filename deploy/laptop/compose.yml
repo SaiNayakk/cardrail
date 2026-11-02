@@ -1,7 +1,10 @@
 # The laptop's live cell (cell b, ADR-015): the rails in one JVM, the public edge, and a connector of cardrail's own
 # Cloudflare tunnel. Its database is the `cardrail` database in Sprout's Postgres on this laptop.
 #
-#   deploy/laptop/up.sh vX.Y.Z      (a tagged release only; never beside a pre-prod on this laptop)
+#   deploy/release.sh vX.Y.Z      (a tagged release only; never beside a pre-prod on this laptop)
+#
+# Its database: Sprout's Postgres, reached only through the `cardrail-pg` network Sprout's session made for this
+# (alias sprout-pg); pg_hba lets that subnet reach only the `cardrail` database as `cardrail`.
 #
 # Memory: at most 700 MB for all of cardrail here (rails 384 MB when holding the phone's half too, edge 32 MB,
 # connector 64 MB). Secrets are in .env next to this file (made by deploy/secrets.py, never committed or printed).
@@ -17,10 +20,11 @@ services:
       CARDRAIL_WATCH: "true"
       CARDRAIL_CELL: b
       CARDRAIL_STATE_FILE: /state/cell-state
-      CARDRAIL_PEER_LAN: ${PHONE_LAN:?}
-      CARDRAIL_PEER_STATUS_URL: http://${PHONE_LAN}:8209/cell/status
-      CARDRAIL_DB_URL: jdbc:postgresql://${CARDRAIL_PG_HOST:?}:${CARDRAIL_PG_PORT:-5432}/cardrail
-      CARDRAIL_PEER_DB_URL: jdbc:postgresql://${CARDRAIL_PEER_PG_HOST:?}:${CARDRAIL_PEER_PG_PORT:-5432}/cardrail
+      CARDRAIL_PEER_LAN: ${PHONE_LAN:-192.168.0.7}
+      CARDRAIL_PEER_STATUS_URL: http://${PHONE_LAN:-192.168.0.7}:8209/cell/status
+      CARDRAIL_DB_URL: jdbc:postgresql://${CARDRAIL_PG_HOST:-sprout-pg}:${CARDRAIL_PG_PORT:-5432}/cardrail
+      # the phone's Postgres, for the subscription: through the TCP path Sprout's cells already keep (agreed with Sprout)
+      CARDRAIL_PEER_DB_URL: jdbc:postgresql://${CARDRAIL_PEER_PG_HOST:-pgpeer}:${CARDRAIL_PEER_PG_PORT:-5432}/cardrail
       # one heap for the rails; holding the phone's half too, the whole system fits in the same limit
       XMX: 176m
       LOG_FORMAT: ecs
@@ -29,13 +33,13 @@ services:
       DB_POOL_IDLE_TIMEOUT: "10000"
       CARDRAIL_DEMO: "true"
       TRACE_URL: http://127.0.0.1:8206
-      ISSUER_DB_URL: jdbc:postgresql://${CARDRAIL_PG_HOST}:${CARDRAIL_PG_PORT:-5432}/cardrail?currentSchema=issuer
-      MERIDIAN_DB_URL: jdbc:postgresql://${CARDRAIL_PG_HOST}:${CARDRAIL_PG_PORT:-5432}/cardrail?currentSchema=meridian
-      TRACE_DB_URL: jdbc:postgresql://${CARDRAIL_PG_HOST}:${CARDRAIL_PG_PORT:-5432}/cardrail?currentSchema=trace
-      NETWORK_DB_URL: jdbc:postgresql://${CARDRAIL_PG_HOST}:${CARDRAIL_PG_PORT:-5432}/cardrail?currentSchema=network
-      ACQUIRER_DB_URL: jdbc:postgresql://${CARDRAIL_PG_HOST}:${CARDRAIL_PG_PORT:-5432}/cardrail?currentSchema=acquirer
-      VAULT_DB_URL: jdbc:postgresql://${CARDRAIL_PG_HOST}:${CARDRAIL_PG_PORT:-5432}/cardrail?currentSchema=vault
-      GATEWAY_DB_URL: jdbc:postgresql://${CARDRAIL_PG_HOST}:${CARDRAIL_PG_PORT:-5432}/cardrail?currentSchema=gateway
+      ISSUER_DB_URL: jdbc:postgresql://${CARDRAIL_PG_HOST:-sprout-pg}:${CARDRAIL_PG_PORT:-5432}/cardrail?currentSchema=issuer
+      MERIDIAN_DB_URL: jdbc:postgresql://${CARDRAIL_PG_HOST:-sprout-pg}:${CARDRAIL_PG_PORT:-5432}/cardrail?currentSchema=meridian
+      TRACE_DB_URL: jdbc:postgresql://${CARDRAIL_PG_HOST:-sprout-pg}:${CARDRAIL_PG_PORT:-5432}/cardrail?currentSchema=trace
+      NETWORK_DB_URL: jdbc:postgresql://${CARDRAIL_PG_HOST:-sprout-pg}:${CARDRAIL_PG_PORT:-5432}/cardrail?currentSchema=network
+      ACQUIRER_DB_URL: jdbc:postgresql://${CARDRAIL_PG_HOST:-sprout-pg}:${CARDRAIL_PG_PORT:-5432}/cardrail?currentSchema=acquirer
+      VAULT_DB_URL: jdbc:postgresql://${CARDRAIL_PG_HOST:-sprout-pg}:${CARDRAIL_PG_PORT:-5432}/cardrail?currentSchema=vault
+      GATEWAY_DB_URL: jdbc:postgresql://${CARDRAIL_PG_HOST:-sprout-pg}:${CARDRAIL_PG_PORT:-5432}/cardrail?currentSchema=gateway
       GATEWAY_BIND: 0.0.0.0
       VAULT_BIND: 0.0.0.0
       ACQUIRER_BIND: 0.0.0.0
@@ -48,12 +52,13 @@ services:
       MERIDIAN_BIND: 0.0.0.0
       MERIDIAN_ISO_BIND: 0.0.0.0
       # the banks, on the phone (while this cell holds them, the host points these here instead)
-      NETWORK_KESTREL_HOST: ${PHONE_LAN}
-      NETWORK_KESTREL_ACS_URL: http://${PHONE_LAN}:8205
-      ACQUIRER_MERIDIAN_HOST: ${PHONE_LAN}
-      ACQUIRER_MERIDIAN_URL: http://${PHONE_LAN}:8208
+      NETWORK_KESTREL_HOST: ${PHONE_LAN:-192.168.0.7}
+      NETWORK_KESTREL_ACS_URL: http://${PHONE_LAN:-192.168.0.7}:8205
+      ACQUIRER_MERIDIAN_HOST: ${PHONE_LAN:-192.168.0.7}
+      ACQUIRER_MERIDIAN_URL: http://${PHONE_LAN:-192.168.0.7}:8208
     volumes:
       - state:/state
+    networks: [default, cardrail-pg]
     # what the phone's half calls here: the gateway, the network, the trace, and its edge the rest; the cell status
     ports:
       - "8201-8204:8201-8204"
@@ -73,7 +78,7 @@ services:
     environment:
       CELL: b
       LOCAL: rails
-      PEER: ${PHONE_LAN}
+      PEER: ${PHONE_LAN:-192.168.0.7}
       STATE_FILE: /state/cell-state
       TEMPLATE: /etc/nginx/templates/default.conf.template
       CONF: /etc/nginx/conf.d/default.conf
@@ -95,3 +100,7 @@ services:
 
 volumes:
   state:
+
+networks:
+  cardrail-pg:
+    external: true

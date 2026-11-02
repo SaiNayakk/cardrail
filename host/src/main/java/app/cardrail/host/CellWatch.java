@@ -73,6 +73,8 @@ final class CellWatch {
     private volatile String group = "";
     private boolean peerSeen;
     private Instant peerLastSeen = Instant.now();
+    private Instant witnessReadAt = Instant.EPOCH;
+    private boolean witnessSaysUp = true;
 
     CellWatch(Map<String, String> env) {
         this.env = env;
@@ -134,8 +136,10 @@ final class CellWatch {
                 peerSeen = true;
                 peerLastSeen = Instant.now();
             }
-            View view = new View(peerState, peerState == null && peerRegionUp(), peerState == null && sproutTakingOver());
-            switch (decide(state(), view, peerSeen, Duration.between(peerLastSeen, Instant.now()), takeoverAfter)) {
+            Duration silentFor = Duration.between(peerLastSeen, Instant.now());
+            boolean ask = peerState == null && peerSeen;          // the witness is read only while the other cell is silent
+            View view = new View(peerState, ask && peerRegionUp(silentFor), ask && sproutTakingOver());
+            switch (decide(state(), view, peerSeen, silentFor, takeoverAfter)) {
                 case FENCE -> {
                     log.warn("Cell {} holds this cell's institutions; stopping them here", peer());
                     write(TAKEN_OVER);
@@ -175,8 +179,22 @@ final class CellWatch {
         }
     }
 
-    /** Whether Sprout's witness shows the other device's region up. When in doubt, up: takeovers need proof. */
-    private boolean peerRegionUp() {
+    /**
+     * Whether Sprout's witness shows the other device's region up. When in doubt, up: takeovers need proof. The
+     * witness is shared with Sprout on a free plan, so it is read every 10 s at most, every 30 s once the other
+     * cell has been silent for 10 minutes, and a failed read waits its turn like any other.
+     */
+    private boolean peerRegionUp(Duration silentFor) {
+        Duration every = silentFor.compareTo(Duration.ofMinutes(10)) < 0 ? Duration.ofSeconds(10) : Duration.ofSeconds(30);
+        if (Duration.between(witnessReadAt, Instant.now()).compareTo(every) < 0) {
+            return witnessSaysUp;
+        }
+        witnessReadAt = Instant.now();
+        witnessSaysUp = readWitness();
+        return witnessSaysUp;
+    }
+
+    private boolean readWitness() {
         try {
             String url = env.getOrDefault("CARDRAIL_WITNESS_URL", "https://sprout-witness.sai31nayak.workers.dev/status");
             HttpResponse<String> r = HTTP.send(HttpRequest.newBuilder(URI.create(url)).timeout(Duration.ofSeconds(8)).build(),
@@ -199,7 +217,7 @@ final class CellWatch {
             return false;
         }
         try {
-            return Files.readString(Path.of(file), StandardCharsets.UTF_8).contains("TAKING_OVER");
+            return "TAKING_OVER".equals(JSON.readTree(Files.readString(Path.of(file), StandardCharsets.UTF_8)).path("state").asText());
         } catch (IOException e) {
             return false;
         }

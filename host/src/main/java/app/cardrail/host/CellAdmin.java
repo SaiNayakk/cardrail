@@ -95,9 +95,17 @@ final class CellAdmin {
 
             String subscription = "cardrail_from_" + peer;
             if (exists(st, "SELECT 1 FROM pg_subscription WHERE subname = '" + subscription + "'")) {
-                st.execute("ALTER SUBSCRIPTION " + subscription + " REFRESH PUBLICATION");
-                log.info("Refreshed subscription {}", subscription);
-                return true;
+                if (!slotLost(subscription)) {
+                    st.execute("ALTER SUBSCRIPTION " + subscription + " REFRESH PUBLICATION");
+                    log.info("Refreshed subscription {}", subscription);
+                    return true;
+                }
+                // The other cell dropped the WAL this copy still needed (it was away too long): copy it all again
+                log.warn("Cell {} no longer keeps what {} needs; copying everything again", peer, subscription);
+                st.execute("ALTER SUBSCRIPTION " + subscription + " DISABLE");
+                st.execute("ALTER SUBSCRIPTION " + subscription + " SET (slot_name = NONE)");
+                st.execute("DROP SUBSCRIPTION " + subscription);
+                dropPeerSlot(subscription);
             }
             // The copy starts from the other cell's rows only: anything a migration seeded here would collide.
             List<String> copies = tables(st, owned(peer));
@@ -139,6 +147,21 @@ final class CellAdmin {
         } catch (SQLException e) {
             log.info("Cell {}'s database can't be reached: {}", peer, e.getMessage());
             return false;
+        }
+    }
+
+    /** Whether the other cell's slot for this subscription is gone, or has lost WAL it hadn't sent yet. */
+    private boolean slotLost(String slot) throws SQLException {
+        try (Connection c = DriverManager.getConnection(peerUrl, user, peerPassword); Statement st = c.createStatement();
+             ResultSet rs = st.executeQuery("SELECT wal_status FROM pg_replication_slots WHERE slot_name = '" + slot + "'")) {
+            return !rs.next() || "lost".equals(rs.getString(1));
+        }
+    }
+
+    private void dropPeerSlot(String slot) throws SQLException {
+        try (Connection c = DriverManager.getConnection(peerUrl, user, peerPassword); Statement st = c.createStatement()) {
+            st.execute("SELECT pg_drop_replication_slot(slot_name) FROM pg_replication_slots WHERE slot_name = '" + slot
+                    + "' AND NOT active");
         }
     }
 
