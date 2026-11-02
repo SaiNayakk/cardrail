@@ -9,6 +9,9 @@
 #   - it starts nothing while Sprout's cellwatch is TAKING_OVER (its worst memory moment)
 #   - it starts the JVM only with CARDRAIL_MIN_FREE_MB available (default 1450: the 1.2 GB Sprout keeps, plus ours)
 #   - everything runs at a lower priority than the phone's own work
+#   - Sprout has priority while cardrail runs: if available memory stays under 300 MB for a minute, the JVM is
+#     stopped ("cardrail yielded memory to sprout") and started again only after 5 minutes with 1450 MB
+#     available, and never more than once in 30 minutes
 # It restarts a piece that dies, after the same checks. The JVM exits on purpose (status 3) when its cell changes
 # state, and is started again at once to run what the new state needs.
 set -u
@@ -96,10 +99,37 @@ sleep 60
 start edge
 start front
 
+now() { date +%s; }
+low_since=0        # when available memory first dropped under 300 MB while the JVM ran
+yielded_at=0       # when the JVM last gave way to Sprout
+plenty_since=0     # since when 1450 MB has been available after that
+restarted_at=0     # the last start after giving way
+
 # keep each piece running; the JVM restarts at once after a state change, after the usual checks otherwise
 while sleep 15; do
+    free=$(free_mb)
+    if running host; then
+        if [ "$free" -lt 300 ]; then
+            [ "$low_since" -eq 0 ] && low_since=$(now)
+            if [ $(( $(now) - low_since )) -ge 60 ]; then
+                log "cardrail yielded memory to sprout: $free MB available for a minute"
+                kill_tree "$(pid_of host)"
+                yielded_at=$(now) low_since=0 plenty_since=0
+                continue
+            fi
+        else
+            low_since=0
+        fi
+    fi
     for piece in host edge front; do
         running "$piece" && continue
+        if [ "$piece" = host ] && [ "$yielded_at" -gt 0 ]; then
+            # after giving way: 5 minutes of plenty, and at most one start every 30 minutes
+            if [ "$free" -ge "$MIN_FREE_MB" ]; then [ "$plenty_since" -eq 0 ] && plenty_since=$(now); else plenty_since=0; fi
+            [ "$plenty_since" -gt 0 ] && [ $(( $(now) - plenty_since )) -ge 300 ] || continue
+            [ $(( $(now) - restarted_at )) -ge 1800 ] || continue
+            restarted_at=$(now) yielded_at=0
+        fi
         if [ "$piece" = host ]; then
             wait_ready "$MIN_FREE_MB"
         fi

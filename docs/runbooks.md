@@ -15,7 +15,10 @@ address is `cards-saiworks.nncs.in`, a Cloudflare tunnel of cardrail's own with 
 ## Rules that come with Sprout's devices
 
 - Deploy only a tagged release from `main`, and only while Sprout's witness shows both regions up.
-- The phone keeps 1.2 GB available. The phone's starter waits for that, and for Sprout's own takeover to finish.
+- The phone keeps 1.2 GB available. The phone's starter waits for that, for Sprout to be up, and for Sprout's own
+  takeover to finish. While cardrail runs, Sprout comes first: under 300 MB available for a minute, the JVM stops
+  (`cardrail yielded memory to sprout` in `~/cardrail/logs`) and starts again only after 5 minutes with 1450 MB
+  available, at most once in 30 minutes.
 - Touch nothing of Sprout's: its containers, ports 8100, 18080 and 8195, its starter, its cellwatch, its tunnels.
   cardrail only reads Sprout's witness and, on the phone, its `cells/status.json`.
 - No pre-prod on the laptop while the live cell runs there: pre-prod runs in CI.

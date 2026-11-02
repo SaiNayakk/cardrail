@@ -24,7 +24,7 @@ services:
       CARDRAIL_PEER_STATUS_URL: http://${PHONE_LAN:-192.168.0.7}:8209/cell/status
       CARDRAIL_DB_URL: jdbc:postgresql://${CARDRAIL_PG_HOST:-sprout-pg}:${CARDRAIL_PG_PORT:-5432}/cardrail
       # the phone's Postgres, for the subscription: through the TCP path Sprout's cells already keep (agreed with Sprout)
-      CARDRAIL_PEER_DB_URL: jdbc:postgresql://${CARDRAIL_PEER_PG_HOST:-pgpeer}:${CARDRAIL_PEER_PG_PORT:-5432}/cardrail
+      CARDRAIL_PEER_DB_URL: jdbc:postgresql://${CARDRAIL_PEER_PG_HOST:-sprout-pgpeer}:${CARDRAIL_PEER_PG_PORT:-5432}/cardrail
       # one heap for the rails; holding the phone's half too, the whole system fits in the same limit
       XMX: 176m
       LOG_FORMAT: ecs
